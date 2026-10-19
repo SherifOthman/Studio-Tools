@@ -10,7 +10,6 @@ import os
 import sys
 
 _DEFAULTS = {
-    "lang":         "en",
     "theme":        "blue",
     "appearance":   "dark",
     "fmt":          "jpg",
