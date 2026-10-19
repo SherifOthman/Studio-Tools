@@ -11,6 +11,7 @@ UX improvements in this version:
   - Natural button labels with icons
   - PNG background option only shown when PNG is selected
   - JPG quality slider only shown when JPG is selected
+  - Windows toast notification when conversion finishes and window is not focused
 """
 
 import glob
@@ -24,6 +25,7 @@ import customtkinter as ctk
 from app.core import gs
 from app.core.prefs   import prefs
 from app.core.strings import t, is_rtl
+from app.core         import notify
 
 PRESETS = [
     ("q_screen",  72),
@@ -36,11 +38,12 @@ PAD = 16
 
 class VectorPage(ctk.CTkFrame):
 
-    def __init__(self, master, **kw):
+    def __init__(self, master, shell=None, **kw):
         super().__init__(master, corner_radius=0, fg_color="transparent", **kw)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
+        self._shell = shell          # reference to Shell for focus_window()
         self._files: list[str] = []
         self._busy  = False
         self._cancel = False
@@ -699,7 +702,7 @@ class VectorPage(ctk.CTkFrame):
         for i, src in enumerate(files, start=1):
             if self._cancel:
                 self._q.put(("status", t("status_cancel", ok=ok, fail=fail)))
-                self._q.put(("done", None))
+                self._q.put(("done", (ok, fail)))
                 return
 
             name = os.path.basename(src)
@@ -728,7 +731,14 @@ class VectorPage(ctk.CTkFrame):
 
         self._last_out = out_dir or first_out
         self._q.put(("status", t("status_done", ok=ok, fail=fail)))
-        self._q.put(("done", None))
+        self._q.put(("done", (ok, fail)))
+
+    def _is_window_focused(self) -> bool:
+        """Return True if the app window currently has focus."""
+        try:
+            return bool(self._shell and self._shell.focus_displayof() is not None)
+        except Exception:
+            return True   # assume focused if we can't tell — don't spam notifications
 
     def _drain(self):
         try:
@@ -742,11 +752,36 @@ class VectorPage(ctk.CTkFrame):
                     # Smooth real progress bar
                     self._prog.set(data)
                 elif kind == "done":
+                    ok, fail = data if data else (0, 0)
                     self._prog.set(1)
                     self._set_busy(False)
                     self._open_btn.configure(
                         state="normal" if self._last_out else "disabled"
                     )
+                    # ── Toast notification (only when window is not focused) ──
+                    if not self._is_window_focused():
+                        if is_rtl():
+                            title = "Studio Tools — اكتمل التحويل ✓"
+                            msg   = (f"تم تصدير {ok} ملف بنجاح" +
+                                     (f"،  {fail} فشل" if fail else "") +
+                                     "\nاضغط هنا للعودة إلى التطبيق")
+                        else:
+                            title = "Studio Tools — Conversion complete ✓"
+                            msg   = (f"{ok} file(s) exported successfully" +
+                                     (f",  {fail} failed" if fail else "") +
+                                     "\nClick to return to Studio Tools")
+
+                        def _focus_app():
+                            if self._shell:
+                                self._shell.after(0, self._shell.focus_window)
+
+                        # Send notification in background so it never blocks the UI
+                        threading.Thread(
+                            target=notify.send,
+                            args=(title, msg),
+                            daemon=True,
+                        ).start()
+
         except queue.Empty:
             pass
         self.after(120, self._drain)

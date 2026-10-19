@@ -13,7 +13,7 @@ _DEFAULTS = {
     "lang":         "en",
     "theme":        "blue",
     "appearance":   "dark",
-    "fmt":          "png",
+    "fmt":          "jpg",
     "dpi":          300,
     "jpg_quality":  95,
     "bg":           "transparent",

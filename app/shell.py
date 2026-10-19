@@ -37,6 +37,7 @@ class Shell(ctk.CTk):
         self.title(t("app_name"))
         self.geometry("1100x730")
         self.minsize(880, 580)
+        self.after(0, lambda: self.state("zoomed"))   # open maximised
 
         self._active_page = "vector"
         self._nav_btns: dict[str, ctk.CTkButton] = {}
@@ -139,7 +140,7 @@ class Shell(ctk.CTk):
         from app.pages.coming_soon import ComingSoonPage
         from app.pages.settings    import SettingsPage
 
-        self._pages["vector"]   = VectorPage(self._page_container)
+        self._pages["vector"]   = VectorPage(self._page_container, shell=self)
         self._pages["images"]   = ComingSoonPage(self._page_container, page_id="images")
         self._pages["rename"]   = ComingSoonPage(self._page_container, page_id="rename")
         self._pages["settings"] = SettingsPage(
@@ -180,6 +181,16 @@ class Shell(ctk.CTk):
     def _on_theme(self, tid: str):
         ctk.set_default_color_theme(tid)
         self._full_rebuild()
+
+    def focus_window(self):
+        """Bring this window to the front — called when user clicks a notification."""
+        try:
+            self.deiconify()         # restore if minimised
+            self.lift()              # raise above other windows
+            self.focus_force()       # grab keyboard focus
+            self.state("zoomed")     # ensure maximised
+        except Exception:
+            pass
 
     def _full_rebuild(self):
         """
