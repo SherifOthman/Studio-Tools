@@ -122,17 +122,16 @@ class VectorPage(ctk.CTkFrame):
         two_col.grid_columnconfigure(1, weight=2)
         self._build_format_card(two_col)
         self._build_quality_card(two_col)
-
         # ── Save card (full width) ───────────────────────────────────────
         self._build_save_card(scroll)
 
         # ── Log card (full width) ────────────────────────────────────────
         self._build_log_card(scroll)
-
     # ── Card: Files ────────────────────────────────────────────────────────
 
     def _build_files_card(self, parent):
-        inner = self._card(parent, t("s1_files"), pack=True)
+        # TOP_PAD gives breathing room between the header and first card
+        inner = self._card(parent, t("s1_files"), pack=True, top_pad=PAD)
 
         # Button row — buttons flow from reading-start edge
         br = ctk.CTkFrame(inner, fg_color="transparent")
@@ -186,42 +185,46 @@ class VectorPage(ctk.CTkFrame):
         R.section_label(self._png_section, t("png_bg_label")).pack(
             anchor=R.anchor_start(), pady=(8, 4))
         self._bg = ctk.StringVar(value=prefs["bg"])
-        for val, key in (("transparent", "png_bg_trans"), ("white", "png_bg_white")):
-            self._radio_row(self._png_section, t(key), self._bg, val)
+        # Clean radio rows — no emoji squares
+        self._radio_row(self._png_section, t("adv_bg_trans"), self._bg, "transparent")
+        self._radio_row(self._png_section, t("adv_bg_white"), self._bg, "white")
         R.hint_label(self._png_section, t("fmt_png_hint"),
                      wraplength=200).pack(anchor=R.anchor_start(), pady=(6, 0))
 
         # ── JPG section (quality slider) ─────────────────────────────────
         self._jpg_section = ctk.CTkFrame(inner, fg_color="transparent")
-        R.section_label(self._jpg_section, t("jpg_q_label")).pack(
-            anchor=R.anchor_start(), pady=(8, 4))
 
-        # Slider row: in RTL fills right→left
+        # Label row: "JPG Quality:" above the slider
+        R.section_label(self._jpg_section, t("jpg_q_label")).pack(
+            anchor=R.anchor_start(), pady=(8, 6))
+
+        # Slider row: value number on the reading-start side, slider extends away
         sl_row = ctk.CTkFrame(self._jpg_section, fg_color="transparent")
-        sl_row.pack(anchor=R.anchor_start())
+        sl_row.pack(fill="x", anchor=R.anchor_start())
 
         self._jpg_q      = ctk.IntVar(value=prefs["jpg_quality"])
+        self._jpg_lbl    = ctk.CTkLabel(
+            sl_row, text=str(prefs["jpg_quality"]),
+            width=36, font=ctk.CTkFont("Segoe UI", 13, "bold"),
+        )
         self._jpg_slider = ctk.CTkSlider(
             sl_row, from_=0 if not is_rtl() else 100,
             to=100 if not is_rtl() else 0,
-            variable=self._jpg_q, width=170,
+            variable=self._jpg_q, width=180,
         )
-        self._jpg_lbl = ctk.CTkLabel(
-            sl_row, text=str(prefs["jpg_quality"]),
-            width=32, font=ctk.CTkFont("Segoe UI", 12, "bold"),
-        )
-        # In RTL: label on right (reading-start), slider to its left
         if is_rtl():
-            self._jpg_lbl.pack(side="right", padx=(0, 6))
+            # RTL: number on right (reading-start), slider extends left
+            self._jpg_lbl.pack(side="right", padx=(0, 8))
             self._jpg_slider.pack(side="right")
         else:
             self._jpg_slider.pack(side="left")
-            self._jpg_lbl.pack(side="left", padx=(6, 0))
+            self._jpg_lbl.pack(side="left", padx=(8, 0))
 
         self._jpg_q.trace_add("write",
             lambda *_: self._jpg_lbl.configure(text=str(self._jpg_q.get())))
+
         R.hint_label(self._jpg_section, t("jpg_q_hint"),
-                     wraplength=200).pack(anchor=R.anchor_start(), pady=(6, 0))
+                     wraplength=210).pack(anchor=R.anchor_start(), pady=(6, 0))
 
         self._fmt_changed()   # show the right section immediately
 
@@ -251,19 +254,21 @@ class VectorPage(ctk.CTkFrame):
                      wraplength=320).pack(anchor=R.anchor_start(), pady=(0, 8))
 
         # Custom DPI row
+        # RTL: [entry field] [label text]  (entry is reading-start = right)
+        # LTR: [label text] [entry field]
         dpi_row = ctk.CTkFrame(inner, fg_color="transparent")
         dpi_row.pack(anchor=R.anchor_start(), pady=(0, 10))
 
         lbl = ctk.CTkLabel(dpi_row, text=t("q_custom_label"),
                            font=ctk.CTkFont("Segoe UI", 11))
-        # File paths and numbers stay LTR always
         self._dpi_entry = ctk.CTkEntry(dpi_row, width=78,
                                         placeholder_text="300",
-                                        justify="left")
+                                        justify="left")   # numbers always LTR
         self._dpi_entry.insert(0, str(prefs["dpi"]))
         self._dpi_entry.bind("<KeyRelease>", lambda _: self._on_custom_dpi())
 
         if is_rtl():
+            # Reading order RTL: ← label ← [300] (entry on right = reading-start)
             self._dpi_entry.pack(side="right", padx=(0, 8))
             lbl.pack(side="right")
         else:
@@ -285,21 +290,32 @@ class VectorPage(ctk.CTkFrame):
         # Filename suffix
         R.section_label(inner, t("suffix_label")).pack(
             anchor=R.anchor_start())
+        # Suffix row: entry field + hint
+        # RTL: [entry] [مثال:] [_web → logo_web.png]  (entry on reading-start right)
+        # LTR: [entry] [e.g.] [_web → logo_web.png]
         suf_row = ctk.CTkFrame(inner, fg_color="transparent")
         suf_row.pack(anchor=R.anchor_start(), pady=(4, 0))
         self._suffix = ctk.StringVar(value=prefs["suffix"])
         suf_entry = ctk.CTkEntry(suf_row, textvariable=self._suffix,
-                                  width=120, placeholder_text="_web",
-                                  justify="left")   # filenames are always LTR
-        suf_hint  = ctk.CTkLabel(suf_row, text=t("suffix_hint"),
-                                  font=ctk.CTkFont("Segoe UI", 10),
-                                  text_color=("gray40", "gray60"))
+                                  width=110, placeholder_text="_web",
+                                  justify="left")
+        # "مثال:" / "e.g." label
+        suf_lbl = ctk.CTkLabel(suf_row, text=t("suffix_hint"),
+                                font=ctk.CTkFont("Segoe UI", 10),
+                                text_color=("gray40", "gray60"))
+        # The example itself is always LTR (file names)
+        suf_ex = ctk.CTkLabel(suf_row, text=t("suffix_hint_ex"),
+                               font=ctk.CTkFont("Consolas", 10),
+                               text_color=("gray40", "gray60"))
         if is_rtl():
-            suf_hint.pack(side="right", padx=(0, 8))
-            suf_entry.pack(side="right")
+            # Right → left: [entry] [مثال:] [_web → logo_web.png]
+            suf_entry.pack(side="right", padx=(0, 10))
+            suf_lbl.pack(side="right", padx=(0, 4))
+            suf_ex.pack(side="right")
         else:
-            suf_entry.pack(side="left", padx=(0, 8))
-            suf_hint.pack(side="left")
+            suf_entry.pack(side="left", padx=(0, 10))
+            suf_lbl.pack(side="left", padx=(0, 4))
+            suf_ex.pack(side="left")
 
     # ── Card: Save ────────────────────────────────────────────────────────
 
@@ -308,29 +324,33 @@ class VectorPage(ctk.CTkFrame):
         self._out_mode = ctk.StringVar(value=prefs["out_mode"])
 
         self._radio_row(inner, t("save_beside"), self._out_mode, "beside",
-                        command=self._save_mode_changed, pady=(0, 8))
+                        command=self._save_mode_changed, pady=(0, 10))
 
         # Custom folder row
+        # RTL: [Browse] [entry] [في مجلد محدد:] [○]
+        # LTR: [○] [Save to folder:] [entry] [Browse]
         cf_row = ctk.CTkFrame(inner, fg_color="transparent")
         cf_row.pack(fill="x")
 
-        # Radio on reading-start, then folder path (LTR always), then Browse button
         self._rb_custom = ctk.CTkRadioButton(
             cf_row, text="",
             variable=self._out_mode, value="custom",
             command=self._save_mode_changed,
-            width=24,
+            width=20,
         )
         custom_lbl = ctk.CTkLabel(
             cf_row, text=t("save_custom"),
             font=ctk.CTkFont("Segoe UI", 12),
             anchor=R.text_anchor(),
+            cursor="hand2",
         )
-        # Folder entry: always LTR (file paths are LTR in any language)
+        custom_lbl.bind("<Button-1>",
+                        lambda _: (self._out_mode.set("custom"), self._save_mode_changed()))
+
         self._out_entry = ctk.CTkEntry(
-            cf_row, width=300,
+            cf_row, width=260,
             placeholder_text="C:\\Output\\folder",
-            justify="left",    # file paths are always LTR
+            justify="left",
         )
         self._out_entry.insert(0, prefs["last_out_dir"])
 
@@ -340,16 +360,14 @@ class VectorPage(ctk.CTkFrame):
             command=self._browse_out,
         )
 
-        # Layout the row respecting RTL
         if is_rtl():
-            # Right → left: radio | label | entry | browse
-            self._rb_custom.pack(side="right", padx=(0, 6))
-            custom_lbl.pack(side="right", padx=(0, 4))
+            self._rb_custom.pack(side="right", padx=(4, 0))
+            custom_lbl.pack(side="right", padx=(0, 6))
             self._browse_btn.pack(side="left", padx=(0, 6))
-            self._out_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            self._out_entry.pack(side="left", fill="x", expand=True)
         else:
-            self._rb_custom.pack(side="left", padx=(0, 6))
-            custom_lbl.pack(side="left", padx=(0, 4))
+            self._rb_custom.pack(side="left", padx=(0, 4))
+            custom_lbl.pack(side="left", padx=(0, 6))
             self._out_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self._browse_btn.pack(side="left")
 
@@ -422,14 +440,15 @@ class VectorPage(ctk.CTkFrame):
     # ── Widget factories ───────────────────────────────────────────────────
 
     def _card(self, parent, title: str,
-              pack=False, grid_col: int | None = None) -> ctk.CTkFrame:
+              pack=False, grid_col: int | None = None,
+              top_pad: int = 0) -> ctk.CTkFrame:
         outer = ctk.CTkFrame(parent, corner_radius=12)
 
         if pack:
-            outer.pack(fill="x", padx=PAD, pady=(0, PAD))
+            outer.pack(fill="x", padx=PAD, pady=(top_pad, PAD))
         else:
             padx = (0, PAD // 2) if grid_col == 0 else (PAD // 2, 0)
-            outer.grid(row=0, column=grid_col, sticky="nsew", padx=padx, pady=(0, PAD))
+            outer.grid(row=0, column=grid_col, sticky="nsew", padx=padx, pady=(top_pad, PAD))
 
         ctk.CTkLabel(
             outer, text=title,
