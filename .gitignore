@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# PyInstaller build artefacts
+build/StudioTools/
+build/StudioToolsDebug/
+dist/
+*.spec
+
+# Preferences (per-user, not committed)
+prefs.json
+
+# Ghostscript installer (large binary, not committed)
+gs*.exe
+build/gs*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
