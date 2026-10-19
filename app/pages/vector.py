@@ -275,7 +275,7 @@ class VectorPage(ctk.CTkFrame):
         inner = self._card(parent, t("s4_save"), pack=True)
         self._out_mode = ctk.StringVar(value=prefs["out_mode"])
 
-        ctk.CTkRadioButton(inner, text=t("save_beside"),
+        ctk.CTkRadioButton(inner, text="  Next to each original file",
                             variable=self._out_mode, value="beside",
                             command=self._save_changed,
                             font=ctk.CTkFont("Segoe UI", 12),
@@ -287,10 +287,11 @@ class VectorPage(ctk.CTkFrame):
         self._rb_custom = ctk.CTkRadioButton(
             cf, text="", variable=self._out_mode, value="custom",
             command=self._save_changed, width=20)
-        ctk.CTkLabel(cf, text=t("save_custom"),
-                     font=ctk.CTkFont("Segoe UI", 12), anchor="w",
-                     cursor="hand2",
-                     ).pack(side="left", padx=(4, 6))
+        custom_lbl = ctk.CTkLabel(cf, text=t("save_custom"),
+                                   font=ctk.CTkFont("Segoe UI", 12), anchor="w",
+                                   cursor="hand2")
+        custom_lbl.bind("<Button-1>",
+                        lambda _: (self._out_mode.set("custom"), self._save_changed()))
 
         self._out_entry = ctk.CTkEntry(cf, width=270,
                                         placeholder_text="C:\\Output\\folder",
@@ -299,7 +300,9 @@ class VectorPage(ctk.CTkFrame):
         self._browse_btn = ctk.CTkButton(cf, text=t("btn_browse"), width=100,
                                           **self._sec(), command=self._browse_out)
 
-        self._rb_custom.pack(side="left")
+        # Pack in correct visual order: ○  label  [entry]  [browse]
+        self._rb_custom.pack(side="left", padx=(0, 4))
+        custom_lbl.pack(side="left", padx=(0, 8))
         self._out_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self._browse_btn.pack(side="left")
 
@@ -333,14 +336,14 @@ class VectorPage(ctk.CTkFrame):
         return inner
 
     def _sec(self) -> dict:
-        return dict(fg_color=("gray80", "gray25"),
-                    hover_color=("gray70", "gray35"),
-                    text_color=("gray10", "gray90"))
+        return dict(fg_color=("gray75", "gray25"),
+                    hover_color=("gray65", "gray35"),
+                    text_color=("gray10", "gray95"))
 
     def _ghost(self) -> dict:
-        return dict(fg_color=("gray85", "gray20"),
-                    hover_color=("gray75", "gray30"),
-                    text_color=("gray10", "gray90"))
+        return dict(fg_color=("gray80", "gray22"),
+                    hover_color=("gray70", "gray30"),
+                    text_color=("gray10", "gray95"))
 
     # ── State ─────────────────────────────────────────────────────────────
 

@@ -64,26 +64,30 @@ class SettingsPage(ctk.CTkFrame):
         for tid, label_text, colour in THEMES:
             active = (tid == current)
             card = ctk.CTkFrame(inner,
-                                fg_color=colour if active else ("gray85", "gray20"),
+                                fg_color=colour if active else ("gray88", "gray22"),
                                 corner_radius=10, cursor="hand2")
             card.pack(fill="x", pady=(0, 8))
 
             dot = ctk.CTkFrame(card, width=18, height=18,
                                 corner_radius=9, fg_color=colour)
-            dot.pack(side="left", padx=(12, 6), pady=10)
+            dot.pack(side="left", padx=(12, 8), pady=12)
 
-            ctk.CTkLabel(card, text=label_text,
-                         font=ctk.CTkFont("Segoe UI", 12,
-                                          "bold" if active else "normal"),
-                         text_color="white" if active else ("gray20", "gray85"),
-                         anchor="w").pack(side="left", pady=10)
+            name_lbl = ctk.CTkLabel(
+                card, text=label_text,
+                font=ctk.CTkFont("Segoe UI", 13, "bold" if active else "normal"),
+                text_color="white" if active else ("gray15", "gray85"),
+                anchor="w")
+            name_lbl.pack(side="left", pady=12, fill="x", expand=True)
 
-            ctk.CTkLabel(card, text="✓" if active else "",
-                         font=ctk.CTkFont("Segoe UI", 14, "bold"),
-                         text_color="white", width=28,
-                         ).pack(side="right", padx=(0, 10))
+            check_lbl = ctk.CTkLabel(
+                card, text="✓" if active else "",
+                font=ctk.CTkFont("Segoe UI", 14, "bold"),
+                text_color="white" if active else ("gray15", "gray85"),
+                width=28)
+            check_lbl.pack(side="right", padx=(0, 12))
 
-            for w in (card, dot):
+            # Bind ALL children so clicking anywhere on the card triggers it
+            for w in (card, dot, name_lbl, check_lbl):
                 w.bind("<Button-1>", lambda _, x=tid: self._theme_changed(x))
 
     def _theme_changed(self, tid: str):

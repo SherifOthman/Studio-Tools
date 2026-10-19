@@ -107,12 +107,13 @@ class Shell(ctk.CTk):
         return sb
 
     def _build_pages(self):
-        from app.pages.vector      import VectorPage
-        from app.pages.coming_soon import ComingSoonPage
-        from app.pages.settings    import SettingsPage
+        from app.pages.vector        import VectorPage
+        from app.pages.image_convert import ImageConvertPage
+        from app.pages.coming_soon   import ComingSoonPage
+        from app.pages.settings      import SettingsPage
 
         self._pages["vector"]   = VectorPage(self._page_container, shell=self)
-        self._pages["images"]   = ComingSoonPage(self._page_container, page_id="images")
+        self._pages["images"]   = ImageConvertPage(self._page_container)
         self._pages["rename"]   = ComingSoonPage(self._page_container, page_id="rename")
         self._pages["settings"] = SettingsPage(self._page_container,
                                                 on_theme_change=self._on_theme)
@@ -125,16 +126,23 @@ class Shell(ctk.CTk):
         for page in self._pages.values():
             page.lower()
         self._pages[pid].tkraise()
+        th = ctk.ThemeManager.theme
+        accent    = th["CTkButton"]["fg_color"]
+        accent_hv = th["CTkButton"]["hover_color"]
+        # Active text: white in dark mode, white in dark, near-white in light
+        # Use the theme's own button text color so it's always readable
+        active_text = th["CTkButton"].get("text_color", ("gray10", "white"))
         for p, btn in self._nav_btns.items():
             if p == pid:
                 btn.configure(
-                    fg_color=ctk.ThemeManager.theme["CTkButton"]["fg_color"],
-                    text_color=("white", "white"))
+                    fg_color=accent,
+                    hover_color=accent_hv,   # keep accent on hover — don't grey out
+                    text_color=active_text)
             else:
                 btn.configure(
                     fg_color="transparent",
                     hover_color=("gray85", "gray25"),
-                    text_color=ctk.ThemeManager.theme["CTkLabel"]["text_color"])
+                    text_color=th["CTkLabel"]["text_color"])
 
     def _on_theme(self, tid: str):
         ctk.set_default_color_theme(tid)
