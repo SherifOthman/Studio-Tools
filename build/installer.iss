@@ -13,9 +13,9 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 DefaultDirName={autopf}\StudioTools
 DefaultGroupName={#AppName}
-OutputDir=dist
+OutputDir=..\dist
 OutputBaseFilename=StudioTools-Setup
-SetupIconFile=app\assets\app.ico
+SetupIconFile=..\app\assets\app.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -31,9 +31,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create desktop shortcut"; Flags: unchecked
 
 [Files]
-Source: "dist\{#AppExe}";   DestDir: "{app}"; Flags: ignoreversion
-Source: "app\assets\app.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#GsExe}";          DestDir: "{tmp}"; Flags: deleteafterinstall nocompression
+Source: "..\dist\{#AppExe}";      DestDir: "{app}"; Flags: ignoreversion
+Source: "..\app\assets\app.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\{#GsExe}";           DestDir: "{tmp}"; Flags: deleteafterinstall nocompression
 
 [Icons]
 Name: "{group}\{#AppName}";             Filename: "{app}\{#AppExe}"; IconFilename: "{app}\app.ico"
