@@ -3,10 +3,7 @@
 import customtkinter as ctk
 from app.core.strings import t
 
-ICONS = {
-    "images":   "🖼",
-    "rename":   "✏️",
-}
+ICONS = {"images": "🖼", "rename": "✏️"}
 
 
 class ComingSoonPage(ctk.CTkFrame):
@@ -19,21 +16,18 @@ class ComingSoonPage(ctk.CTkFrame):
         centre.grid(row=0, column=0)
 
         ctk.CTkLabel(
-            centre,
-            text=ICONS.get(page_id, "🚧"),
+            centre, text=ICONS.get(page_id, "🚧"),
             font=ctk.CTkFont(size=72),
         ).pack(pady=(0, 16))
 
         ctk.CTkLabel(
-            centre,
-            text=t("coming_soon"),
+            centre, text=t("coming_soon"),
             font=ctk.CTkFont("Segoe UI", 26, "bold"),
         ).pack()
 
         ctk.CTkLabel(
-            centre,
-            text=t("coming_body"),
+            centre, text=t("coming_body"),
             font=ctk.CTkFont("Segoe UI", 13),
-            text_color=("gray40","gray60"),
+            text_color=("gray40", "gray60"),
             justify="center",
         ).pack(pady=(8, 0))

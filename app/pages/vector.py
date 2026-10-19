@@ -1,17 +1,15 @@
 """
 pages/vector.py  –  Vector Export page
 
-UX improvements in this version:
-  - 2-column layout (format left, quality right) to reduce scrolling
-  - Real determinate progress bar (0 → 100%) instead of bouncing animation
-  - Format change immediately enables/disables dependent options (PNG bg, JPG quality)
-  - Custom DPI entry clears preset selection; preset click fills custom DPI
-  - All interactive widgets properly disabled/enabled during conversion
-  - RTL layout when Arabic is active
-  - Natural button labels with icons
-  - PNG background option only shown when PNG is selected
-  - JPG quality slider only shown when JPG is selected
-  - Windows toast notification when conversion finishes and window is not focused
+RTL rules (Material Design 3 / Apple HIG):
+  • Every row starts from the reading-start edge (right in Arabic, left in English).
+  • Radio buttons and checkboxes: the circle/box is on the READING-START side,
+    text follows toward the reading-end side. In Arabic: ○ on the right, text to left.
+  • Icons come before their label in reading order (so on the right in Arabic).
+  • File paths, DPI numbers, folder paths stay LTR always.
+  • Progress bar fills from reading-start to reading-end.
+  • The header title is aligned to the reading-start edge.
+  • Content area has proper top padding so it never overlaps the header.
 """
 
 import glob
@@ -22,10 +20,9 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from app.core import gs
-from app.core.prefs   import prefs
+from app.core        import gs, notify, rtl as R
+from app.core.prefs  import prefs
 from app.core.strings import t, is_rtl
-from app.core         import notify
 
 PRESETS = [
     ("q_screen",  72),
@@ -41,16 +38,16 @@ class VectorPage(ctk.CTkFrame):
     def __init__(self, master, shell=None, **kw):
         super().__init__(master, corner_radius=0, fg_color="transparent", **kw)
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(1, weight=1)   # row 1 = body; row 0 = header; row 2 = bar
 
-        self._shell = shell          # reference to Shell for focus_window()
+        self._shell       = shell
         self._files: list[str] = []
-        self._busy  = False
-        self._cancel = False
+        self._busy        = False
+        self._cancel      = False
         self._last_out: str | None = None
         self._q: queue.Queue = queue.Queue()
-        self._gs_exe = gs.find()
-        self._prog_total = 0
+        self._gs_exe      = gs.find()
+        self._prog_total  = 0
 
         self._build()
         self._update_gs_badge()
@@ -61,39 +58,52 @@ class VectorPage(ctk.CTkFrame):
     def _build(self):
         self._build_header()
         self._build_body()
-        self._build_bottom_bar()
+        self._build_action_bar()
+
+    # ── Header ─────────────────────────────────────────────────────────────
 
     def _build_header(self):
-        hdr = ctk.CTkFrame(self, corner_radius=0, height=64)
+        hdr = ctk.CTkFrame(self, corner_radius=0, height=70)
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.grid_propagate(False)
         hdr.grid_columnconfigure(1, weight=1)
 
-        anchor_side = "e" if is_rtl() else "w"
-        text_side   = "right" if is_rtl() else "left"
+        # Title on reading-start side
+        title_col  = 2 if is_rtl() else 0
+        badge_col  = 0 if is_rtl() else 2
+        title_anch = "e" if is_rtl() else "w"
+        badge_anch = "w" if is_rtl() else "e"
 
         ctk.CTkLabel(
             hdr, text=t("vec_title"),
             font=ctk.CTkFont("Segoe UI", 22, "bold"),
-            anchor=anchor_side,
-        ).grid(row=0, column=0, padx=(PAD, 10), pady=(12, 2), sticky=anchor_side)
+            anchor=title_anch,
+        ).grid(row=0, column=title_col, padx=(PAD, 10),
+               pady=(14, 2), sticky=title_anch)
 
         ctk.CTkLabel(
             hdr, text=t("vec_subtitle"),
             font=ctk.CTkFont("Segoe UI", 11),
             text_color=("gray40", "gray60"),
-            anchor=anchor_side,
-        ).grid(row=1, column=0, padx=(PAD, 10), pady=(0, 10), sticky=anchor_side)
+            anchor=title_anch,
+        ).grid(row=1, column=title_col, padx=(PAD, 10),
+               pady=(0, 10), sticky=title_anch)
 
+        # GS badge on reading-end side
         self._gs_badge = ctk.CTkLabel(
             hdr, text="",
             font=ctk.CTkFont("Segoe UI", 10),
+            anchor=badge_anch,
         )
-        # Badge on the opposite side from title
-        badge_col = 0 if is_rtl() else 2
-        badge_sticky = "w" if is_rtl() else "e"
         self._gs_badge.grid(row=0, column=badge_col, rowspan=2,
-                            padx=PAD, sticky=badge_sticky)
+                            padx=PAD, sticky=badge_anch)
+
+        # Thin separator under header
+        ctk.CTkFrame(
+            self, height=1, fg_color=("gray82", "gray28"), corner_radius=0,
+        ).grid(row=0, column=0, sticky="sew")   # sticks to bottom of row 0
+
+    # ── Scrollable body ─────────────────────────────────────────────────────
 
     def _build_body(self):
         scroll = ctk.CTkScrollableFrame(
@@ -102,379 +112,406 @@ class VectorPage(ctk.CTkFrame):
         scroll.grid(row=1, column=0, sticky="nsew")
         scroll.grid_columnconfigure(0, weight=1)
 
-        # ── Row 1: Files card (full width) ───────────────────────────────
-        self._build_card_files(scroll)
+        # ── Files card (full width) ──────────────────────────────────────
+        self._build_files_card(scroll)
 
-        # ── Row 2: Format (left) + Quality (right) side-by-side ──────────
-        row2 = ctk.CTkFrame(scroll, fg_color="transparent")
-        row2.pack(fill="x", padx=PAD, pady=(0, PAD))
-        row2.grid_columnconfigure(0, weight=1)
-        row2.grid_columnconfigure(1, weight=2)
+        # ── Format + Quality side-by-side row ────────────────────────────
+        two_col = ctk.CTkFrame(scroll, fg_color="transparent")
+        two_col.pack(fill="x", padx=PAD, pady=(0, PAD))
+        two_col.grid_columnconfigure(0, weight=1)
+        two_col.grid_columnconfigure(1, weight=2)
+        self._build_format_card(two_col)
+        self._build_quality_card(two_col)
 
-        self._build_card_format(row2)
-        self._build_card_quality(row2)
+        # ── Save card (full width) ───────────────────────────────────────
+        self._build_save_card(scroll)
 
-        # ── Row 3: Save location (full width) ────────────────────────────
-        self._build_card_save(scroll)
+        # ── Log card (full width) ────────────────────────────────────────
+        self._build_log_card(scroll)
 
-        # ── Row 4: Log (full width) ───────────────────────────────────────
-        self._build_card_log(scroll)
+    # ── Card: Files ────────────────────────────────────────────────────────
 
-    # Card: Files ────────────────────────────────────────────────────────────
-    def _build_card_files(self, parent):
-        card = self._card_outer(parent)
-        self._card_title(card, t("s1_files"))
-        inner = self._card_inner(card)
+    def _build_files_card(self, parent):
+        inner = self._card(parent, t("s1_files"), pack=True)
 
-        # Buttons row — respects RTL
+        # Button row — buttons flow from reading-start edge
         br = ctk.CTkFrame(inner, fg_color="transparent")
         br.pack(fill="x", pady=(0, 8))
 
-        btns = [
-            ("_btn_add",    t("btn_add_files"),  True,  self._add_files),
-            ("_btn_folder", t("btn_add_folder"), False, self._add_folder),
-            ("_btn_rm",     t("btn_remove"),      False, self._remove_sel),
-            ("_btn_clear",  t("btn_clear"),       False, self._clear),
-        ]
-        pack_side = "right" if is_rtl() else "left"
-        for attr, text, primary, cmd in btns:
-            btn = ctk.CTkButton(
-                br, text=text, width=130, height=34,
-                command=cmd,
-                fg_color=("gray80","gray25") if not primary else None,
-                hover_color=("gray70","gray35") if not primary else None,
-                text_color=("gray10","gray90") if not primary else None,
-            )
-            btn.pack(side=pack_side, padx=(0, 6) if pack_side == "left" else (6, 0))
-            setattr(self, attr, btn)
+        self._btn_add    = ctk.CTkButton(br, text=t("btn_add_files"),  width=130,
+                                          command=self._add_files)
+        self._btn_folder = ctk.CTkButton(br, text=t("btn_add_folder"), width=130,
+                                          **self._secondary_btn(),
+                                          command=self._add_folder)
+        self._btn_rm     = ctk.CTkButton(br, text=t("btn_remove"),     width=120,
+                                          **self._ghost_btn(),
+                                          command=self._remove_sel)
+        self._btn_clear  = ctk.CTkButton(br, text=t("btn_clear"),      width=110,
+                                          **self._ghost_btn(),
+                                          command=self._clear)
+
+        # Pack buttons from reading-start
+        for b in (self._btn_add, self._btn_folder, self._btn_rm, self._btn_clear):
+            b.pack(side=R.start(), padx=(0, 6))
 
         self._count_lbl = ctk.CTkLabel(
             br, text=t("n_files_0"),
             font=ctk.CTkFont("Segoe UI", 11),
-            text_color=("gray40","gray60"),
+            text_color=("gray40", "gray60"),
         )
-        count_side = "left" if is_rtl() else "right"
-        self._count_lbl.pack(side=count_side, padx=8)
+        self._count_lbl.pack(side=R.end(), padx=4)
 
         self._file_box = ctk.CTkTextbox(
-            inner, height=140, state="disabled",
+            inner, height=130, state="disabled",
             font=ctk.CTkFont("Consolas", 11),
             wrap="none",
         )
         self._file_box.pack(fill="x")
 
-    # Card: Format ────────────────────────────────────────────────────────────
-    def _build_card_format(self, parent):
-        card = self._card_outer(parent, grid_col=0 if not is_rtl() else 1)
-        self._card_title(card, t("s2_format"))
-        inner = self._card_inner(card)
+    # ── Card: Format ──────────────────────────────────────────────────────
 
+    def _build_format_card(self, parent):
+        inner = self._card(parent, t("s2_format"), grid_col=0 if not is_rtl() else 1)
         self._fmt = ctk.StringVar(value=prefs["fmt"])
-        anchor = "e" if is_rtl() else "w"
 
-        self._fmt_png_rb = ctk.CTkRadioButton(
-            inner, text=t("fmt_png"),
-            variable=self._fmt, value="png",
-            command=self._fmt_changed,
-            font=ctk.CTkFont("Segoe UI", 12),
-        )
-        self._fmt_png_rb.pack(anchor=anchor, pady=(0, 4))
+        # Radio buttons: in RTL the circle is on the right, text on left.
+        # CTkRadioButton naturally places the circle on the left in LTR.
+        # For RTL we use a custom row that puts circle right and text left.
+        for val, key in (("png", "fmt_png"), ("jpg", "fmt_jpg")):
+            self._radio_row(inner, t(key), self._fmt, val,
+                            command=self._fmt_changed)
 
-        self._fmt_jpg_rb = ctk.CTkRadioButton(
-            inner, text=t("fmt_jpg"),
-            variable=self._fmt, value="jpg",
-            command=self._fmt_changed,
-            font=ctk.CTkFont("Segoe UI", 12),
-        )
-        self._fmt_jpg_rb.pack(anchor=anchor, pady=(0, 12))
-
-        # PNG-specific: background choice (hidden when JPG)
+        # ── PNG section (background choice) ─────────────────────────────
         self._png_section = ctk.CTkFrame(inner, fg_color="transparent")
-        ctk.CTkLabel(
-            self._png_section,
-            text=t("png_bg_label"),
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
-            anchor=anchor,
-        ).pack(anchor=anchor, pady=(0, 4))
-
+        R.section_label(self._png_section, t("png_bg_label")).pack(
+            anchor=R.anchor_start(), pady=(8, 4))
         self._bg = ctk.StringVar(value=prefs["bg"])
         for val, key in (("transparent", "png_bg_trans"), ("white", "png_bg_white")):
-            ctk.CTkRadioButton(
-                self._png_section, text=t(key),
-                variable=self._bg, value=val,
-                font=ctk.CTkFont("Segoe UI", 11),
-            ).pack(anchor=anchor, pady=2)
+            self._radio_row(self._png_section, t(key), self._bg, val)
+        R.hint_label(self._png_section, t("fmt_png_hint"),
+                     wraplength=200).pack(anchor=R.anchor_start(), pady=(6, 0))
 
-        hint_lbl = ctk.CTkLabel(
-            self._png_section, text=t("fmt_png_hint"),
-            font=ctk.CTkFont("Segoe UI", 10),
-            text_color=("gray40","gray60"),
-            wraplength=200, justify="left" if not is_rtl() else "right",
-            anchor=anchor,
-        )
-        hint_lbl.pack(anchor=anchor, pady=(6, 0))
-
-        # JPG-specific: quality slider (hidden when PNG)
+        # ── JPG section (quality slider) ─────────────────────────────────
         self._jpg_section = ctk.CTkFrame(inner, fg_color="transparent")
-        ctk.CTkLabel(
-            self._jpg_section,
-            text=t("jpg_q_label"),
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
-            anchor=anchor,
-        ).pack(anchor=anchor, pady=(0, 4))
+        R.section_label(self._jpg_section, t("jpg_q_label")).pack(
+            anchor=R.anchor_start(), pady=(8, 4))
 
-        slider_row = ctk.CTkFrame(self._jpg_section, fg_color="transparent")
-        slider_row.pack(anchor=anchor)
-        self._jpg_q    = ctk.IntVar(value=prefs["jpg_quality"])
+        # Slider row: in RTL fills right→left
+        sl_row = ctk.CTkFrame(self._jpg_section, fg_color="transparent")
+        sl_row.pack(anchor=R.anchor_start())
+
+        self._jpg_q      = ctk.IntVar(value=prefs["jpg_quality"])
         self._jpg_slider = ctk.CTkSlider(
-            slider_row, from_=10, to=100, variable=self._jpg_q, width=160,
+            sl_row, from_=0 if not is_rtl() else 100,
+            to=100 if not is_rtl() else 0,
+            variable=self._jpg_q, width=170,
         )
-        self._jpg_slider.pack(side="left" if not is_rtl() else "right", padx=(0, 8))
         self._jpg_lbl = ctk.CTkLabel(
-            slider_row, text=str(prefs["jpg_quality"]), width=32,
-            font=ctk.CTkFont("Segoe UI", 12, "bold"),
+            sl_row, text=str(prefs["jpg_quality"]),
+            width=32, font=ctk.CTkFont("Segoe UI", 12, "bold"),
         )
-        self._jpg_lbl.pack(side="left" if not is_rtl() else "right")
+        # In RTL: label on right (reading-start), slider to its left
+        if is_rtl():
+            self._jpg_lbl.pack(side="right", padx=(0, 6))
+            self._jpg_slider.pack(side="right")
+        else:
+            self._jpg_slider.pack(side="left")
+            self._jpg_lbl.pack(side="left", padx=(6, 0))
+
         self._jpg_q.trace_add("write",
             lambda *_: self._jpg_lbl.configure(text=str(self._jpg_q.get())))
+        R.hint_label(self._jpg_section, t("jpg_q_hint"),
+                     wraplength=200).pack(anchor=R.anchor_start(), pady=(6, 0))
 
-        ctk.CTkLabel(
-            self._jpg_section, text=t("jpg_q_hint"),
-            font=ctk.CTkFont("Segoe UI", 10),
-            text_color=("gray40","gray60"),
-            wraplength=200, justify="left" if not is_rtl() else "right",
-            anchor=anchor,
-        ).pack(anchor=anchor, pady=(6, 0))
+        self._fmt_changed()   # show the right section immediately
 
-        # Show the right section on startup
-        self._fmt_changed()
+    # ── Card: Quality ─────────────────────────────────────────────────────
 
-    # Card: Quality ────────────────────────────────────────────────────────────
-    def _build_card_quality(self, parent):
-        card = self._card_outer(parent, grid_col=1 if not is_rtl() else 0)
-        self._card_title(card, t("s3_quality"))
-        inner = self._card_inner(card)
+    def _build_quality_card(self, parent):
+        inner = self._card(parent, t("s3_quality"), grid_col=1 if not is_rtl() else 0)
 
-        # Preset buttons row
-        preset_row = ctk.CTkFrame(inner, fg_color="transparent")
-        preset_row.pack(fill="x", pady=(0, 6))
-
+        # Preset buttons — flow from reading-start
+        pr = ctk.CTkFrame(inner, fg_color="transparent")
+        pr.pack(anchor=R.anchor_start(), pady=(0, 8))
         self._dpi_var = ctk.IntVar(value=prefs["dpi"])
         self._preset_btns: list[tuple[ctk.CTkButton, int]] = []
-        pack_side = "right" if is_rtl() else "left"
+
         for key, dpi in PRESETS:
             b = ctk.CTkButton(
-                preset_row, text=t(key),
-                width=90, height=52,
-                corner_radius=8,
-                font=ctk.CTkFont("Segoe UI", 10),
+                pr, text=t(key), width=88, height=50,
+                corner_radius=8, font=ctk.CTkFont("Segoe UI", 10),
                 command=lambda d=dpi: self._set_preset(d),
             )
-            b.pack(side=pack_side, padx=(0, 6) if pack_side == "left" else (6, 0))
+            b.pack(side=R.start(), padx=(0, 6))
             self._preset_btns.append((b, dpi))
 
         self._refresh_preset_colors()
 
-        ctk.CTkLabel(
-            inner, text=t("q_hint"),
-            font=ctk.CTkFont("Segoe UI", 10),
-            text_color=("gray40","gray60"),
-            wraplength=300, justify="left" if not is_rtl() else "right",
-        ).pack(anchor="e" if is_rtl() else "w", pady=(0, 10))
+        R.hint_label(inner, t("q_hint"),
+                     wraplength=320).pack(anchor=R.anchor_start(), pady=(0, 8))
 
-        # Custom DPI
+        # Custom DPI row
         dpi_row = ctk.CTkFrame(inner, fg_color="transparent")
-        dpi_row.pack(anchor="e" if is_rtl() else "w", pady=(0, 12))
-        ctk.CTkLabel(
-            dpi_row, text=t("q_custom_label"),
-            font=ctk.CTkFont("Segoe UI", 11),
-        ).pack(side="right" if is_rtl() else "left", padx=(0, 8))
-        self._dpi_entry = ctk.CTkEntry(dpi_row, width=80,
-                                        placeholder_text="300")
+        dpi_row.pack(anchor=R.anchor_start(), pady=(0, 10))
+
+        lbl = ctk.CTkLabel(dpi_row, text=t("q_custom_label"),
+                           font=ctk.CTkFont("Segoe UI", 11))
+        # File paths and numbers stay LTR always
+        self._dpi_entry = ctk.CTkEntry(dpi_row, width=78,
+                                        placeholder_text="300",
+                                        justify="left")
         self._dpi_entry.insert(0, str(prefs["dpi"]))
-        self._dpi_entry.pack(side="right" if is_rtl() else "left")
-        # When user types a custom DPI, deselect any preset
         self._dpi_entry.bind("<KeyRelease>", lambda _: self._on_custom_dpi())
 
-        # Separator line
-        ctk.CTkFrame(inner, height=1,
-                     fg_color=("gray85","gray30"),
+        if is_rtl():
+            self._dpi_entry.pack(side="right", padx=(0, 8))
+            lbl.pack(side="right")
+        else:
+            lbl.pack(side="left", padx=(0, 8))
+            self._dpi_entry.pack(side="left")
+
+        # Separator
+        ctk.CTkFrame(inner, height=1, fg_color=("gray85", "gray30"),
                      corner_radius=0).pack(fill="x", pady=(0, 10))
 
         # Multi-page checkbox
+        R.section_label(inner, t("pages_label")).pack(
+            anchor=R.anchor_start())
         self._all_pages = ctk.BooleanVar(value=prefs["all_pages"])
-        ctk.CTkLabel(
-            inner, text=t("pages_label"),
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
-            anchor="e" if is_rtl() else "w",
-        ).pack(anchor="e" if is_rtl() else "w")
-        ctk.CTkCheckBox(
-            inner, text=t("pages_check"),
-            variable=self._all_pages,
-            font=ctk.CTkFont("Segoe UI", 11),
-        ).pack(anchor="e" if is_rtl() else "w", pady=(4, 2))
-        ctk.CTkLabel(
-            inner, text=t("pages_hint"),
-            font=ctk.CTkFont("Segoe UI", 10),
-            text_color=("gray40","gray60"),
-            anchor="e" if is_rtl() else "w",
-        ).pack(anchor="e" if is_rtl() else "w", pady=(0, 10))
+        self._check_row(inner, t("pages_check"), self._all_pages)
+        R.hint_label(inner, t("pages_hint")).pack(
+            anchor=R.anchor_start(), pady=(2, 10))
 
         # Filename suffix
-        ctk.CTkLabel(
-            inner, text=t("suffix_label"),
-            font=ctk.CTkFont("Segoe UI", 11, "bold"),
-            anchor="e" if is_rtl() else "w",
-        ).pack(anchor="e" if is_rtl() else "w")
-        suffix_row = ctk.CTkFrame(inner, fg_color="transparent")
-        suffix_row.pack(anchor="e" if is_rtl() else "w", pady=(4, 0))
+        R.section_label(inner, t("suffix_label")).pack(
+            anchor=R.anchor_start())
+        suf_row = ctk.CTkFrame(inner, fg_color="transparent")
+        suf_row.pack(anchor=R.anchor_start(), pady=(4, 0))
         self._suffix = ctk.StringVar(value=prefs["suffix"])
-        ctk.CTkEntry(suffix_row, textvariable=self._suffix, width=130,
-                     placeholder_text="_web").pack(
-            side="right" if is_rtl() else "left", padx=(0, 8))
-        ctk.CTkLabel(
-            suffix_row, text=t("suffix_hint"),
-            font=ctk.CTkFont("Segoe UI", 10),
-            text_color=("gray40","gray60"),
-        ).pack(side="right" if is_rtl() else "left")
+        suf_entry = ctk.CTkEntry(suf_row, textvariable=self._suffix,
+                                  width=120, placeholder_text="_web",
+                                  justify="left")   # filenames are always LTR
+        suf_hint  = ctk.CTkLabel(suf_row, text=t("suffix_hint"),
+                                  font=ctk.CTkFont("Segoe UI", 10),
+                                  text_color=("gray40", "gray60"))
+        if is_rtl():
+            suf_hint.pack(side="right", padx=(0, 8))
+            suf_entry.pack(side="right")
+        else:
+            suf_entry.pack(side="left", padx=(0, 8))
+            suf_hint.pack(side="left")
 
-    # Card: Save ────────────────────────────────────────────────────────────
-    def _build_card_save(self, parent):
-        card = self._card_outer(parent)
-        self._card_title(card, t("s4_save"))
-        inner = self._card_inner(card)
+    # ── Card: Save ────────────────────────────────────────────────────────
 
+    def _build_save_card(self, parent):
+        inner = self._card(parent, t("s4_save"), pack=True)
         self._out_mode = ctk.StringVar(value=prefs["out_mode"])
-        anchor = "e" if is_rtl() else "w"
 
-        ctk.CTkRadioButton(
-            inner, text=t("save_beside"),
-            variable=self._out_mode, value="beside",
-            font=ctk.CTkFont("Segoe UI", 12),
-            command=self._save_mode_changed,
-        ).pack(anchor=anchor, pady=(0, 8))
+        self._radio_row(inner, t("save_beside"), self._out_mode, "beside",
+                        command=self._save_mode_changed, pady=(0, 8))
 
-        custom_row = ctk.CTkFrame(inner, fg_color="transparent")
-        custom_row.pack(fill="x")
+        # Custom folder row
+        cf_row = ctk.CTkFrame(inner, fg_color="transparent")
+        cf_row.pack(fill="x")
 
-        ctk.CTkRadioButton(
-            custom_row, text=t("save_custom"),
+        # Radio on reading-start, then folder path (LTR always), then Browse button
+        self._rb_custom = ctk.CTkRadioButton(
+            cf_row, text="",
             variable=self._out_mode, value="custom",
-            font=ctk.CTkFont("Segoe UI", 12),
             command=self._save_mode_changed,
-        ).pack(side="right" if is_rtl() else "left")
-
+            width=24,
+        )
+        custom_lbl = ctk.CTkLabel(
+            cf_row, text=t("save_custom"),
+            font=ctk.CTkFont("Segoe UI", 12),
+            anchor=R.text_anchor(),
+        )
+        # Folder entry: always LTR (file paths are LTR in any language)
         self._out_entry = ctk.CTkEntry(
-            custom_row,
-            width=340, placeholder_text="C:\\Output\\folder",
+            cf_row, width=300,
+            placeholder_text="C:\\Output\\folder",
+            justify="left",    # file paths are always LTR
         )
         self._out_entry.insert(0, prefs["last_out_dir"])
-        self._out_entry.pack(
-            side="right" if is_rtl() else "left",
-            padx=(8, 0) if is_rtl() else (8, 8),
-        )
+
         self._browse_btn = ctk.CTkButton(
-            custom_row, text=t("btn_browse"), width=100,
-            fg_color=("gray80","gray25"),
-            hover_color=("gray70","gray35"),
-            text_color=("gray10","gray90"),
+            cf_row, text=t("btn_browse"), width=100,
+            **self._secondary_btn(),
             command=self._browse_out,
         )
-        self._browse_btn.pack(side="right" if is_rtl() else "left")
+
+        # Layout the row respecting RTL
+        if is_rtl():
+            # Right → left: radio | label | entry | browse
+            self._rb_custom.pack(side="right", padx=(0, 6))
+            custom_lbl.pack(side="right", padx=(0, 4))
+            self._browse_btn.pack(side="left", padx=(0, 6))
+            self._out_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        else:
+            self._rb_custom.pack(side="left", padx=(0, 6))
+            custom_lbl.pack(side="left", padx=(0, 4))
+            self._out_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            self._browse_btn.pack(side="left")
+
         self._save_mode_changed()
 
-    # Card: Log ────────────────────────────────────────────────────────────
-    def _build_card_log(self, parent):
-        card = self._card_outer(parent)
-        self._card_title(card, t("log_title"))
-        inner = self._card_inner(card)
+    # ── Card: Log ─────────────────────────────────────────────────────────
+
+    def _build_log_card(self, parent):
+        inner = self._card(parent, t("log_title"), pack=True)
         self._log_box = ctk.CTkTextbox(
-            inner, height=110, state="disabled",
+            inner, height=100, state="disabled",
             font=ctk.CTkFont("Consolas", 11),
             wrap="word",
         )
         self._log_box.pack(fill="x")
 
-    # Bottom action bar ────────────────────────────────────────────────────
-    def _build_bottom_bar(self):
-        bar = ctk.CTkFrame(self, corner_radius=0, height=66)
+    # ── Action bar (pinned to bottom) ──────────────────────────────────────
+
+    def _build_action_bar(self):
+        bar = ctk.CTkFrame(self, corner_radius=0, height=64)
         bar.grid(row=2, column=0, sticky="ew")
         bar.grid_propagate(False)
-        bar.grid_columnconfigure(2, weight=1)  # status label stretches
 
-        pack_side = "right" if is_rtl() else "left"
-        status_side = "left" if is_rtl() else "left"
+        # Separator above action bar
+        ctk.CTkFrame(
+            bar, height=1, fg_color=("gray82", "gray28"), corner_radius=0,
+        ).pack(fill="x", side="top")
+
+        inner = ctk.CTkFrame(bar, fg_color="transparent")
+        inner.pack(fill="both", expand=True)
 
         self._convert_btn = ctk.CTkButton(
-            bar, text=t("btn_convert"),
-            width=150, height=44,
+            inner, text=t("btn_convert"),
+            width=150, height=42,
             font=ctk.CTkFont("Segoe UI", 14, "bold"),
             command=self._convert,
         )
         self._cancel_btn = ctk.CTkButton(
-            bar, text=t("btn_cancel"),
-            width=110, height=44,
-            fg_color=("gray80","gray25"),
-            hover_color=("gray70","gray35"),
-            text_color=("gray10","gray90"),
+            inner, text=t("btn_cancel"),
+            width=110, height=42,
             state="disabled",
+            **self._secondary_btn(),
             command=self._do_cancel,
         )
         self._open_btn = ctk.CTkButton(
-            bar, text=t("btn_open"),
-            width=180, height=44,
-            fg_color=("gray80","gray25"),
-            hover_color=("gray70","gray35"),
-            text_color=("gray10","gray90"),
+            inner, text=t("btn_open"),
+            width=180, height=42,
             state="disabled",
+            **self._secondary_btn(),
             command=self._open_out,
         )
         self._status_lbl = ctk.CTkLabel(
-            bar, text=t("status_ready"),
+            inner, text=t("status_ready"),
             font=ctk.CTkFont("Segoe UI", 11),
-            text_color=("gray40","gray60"),
-            anchor="w",
+            text_color=("gray40", "gray60"),
+            anchor=R.text_anchor(),
         )
-
-        # Real determinate progress bar — no more bouncing
-        self._prog = ctk.CTkProgressBar(bar, height=6, corner_radius=3)
+        self._prog = ctk.CTkProgressBar(inner, height=6, corner_radius=3)
         self._prog.set(0)
 
+        # Pack from reading-start
         for w in (self._convert_btn, self._cancel_btn, self._open_btn):
-            w.pack(side=pack_side,
+            w.pack(side=R.start(),
                    padx=(PAD, 0) if w is self._convert_btn else (6, 0),
-                   pady=11)
-        self._status_lbl.pack(side="left", padx=(12, 0), pady=11)
-        self._prog.pack(side="right", padx=PAD, pady=11, fill="x", expand=True)
+                   pady=10)
+        self._status_lbl.pack(side=R.start(), padx=(10, 0), pady=10)
+        self._prog.pack(side=R.end(), padx=PAD, pady=10,
+                        fill="x", expand=True)
 
-    # ── Card builder helpers ───────────────────────────────────────────────
+    # ── Widget factories ───────────────────────────────────────────────────
 
-    def _card_outer(self, parent, grid_col: int | None = None) -> ctk.CTkFrame:
-        """Create a rounded card frame. If grid_col is given, use grid layout."""
-        card = ctk.CTkFrame(parent, corner_radius=12)
-        if grid_col is None:
-            card.pack(fill="x", padx=PAD, pady=(0, PAD))
+    def _card(self, parent, title: str,
+              pack=False, grid_col: int | None = None) -> ctk.CTkFrame:
+        outer = ctk.CTkFrame(parent, corner_radius=12)
+
+        if pack:
+            outer.pack(fill="x", padx=PAD, pady=(0, PAD))
         else:
-            padx_l = (0, PAD // 2) if grid_col == 0 else (PAD // 2, 0)
-            card.grid(row=0, column=grid_col, sticky="nsew",
-                      padx=padx_l, pady=(0, PAD))
-        return card
+            padx = (0, PAD // 2) if grid_col == 0 else (PAD // 2, 0)
+            outer.grid(row=0, column=grid_col, sticky="nsew", padx=padx, pady=(0, PAD))
 
-    def _card_title(self, card: ctk.CTkFrame, title: str):
-        anchor = "e" if is_rtl() else "w"
         ctk.CTkLabel(
-            card, text=title,
+            outer, text=title,
             font=ctk.CTkFont("Segoe UI", 13, "bold"),
-            anchor=anchor,
-        ).pack(anchor=anchor, padx=PAD, pady=(12, 0))
+            anchor=R.anchor_start(),
+        ).pack(anchor=R.anchor_start(), padx=PAD, pady=(12, 0))
+
         ctk.CTkFrame(
-            card, height=1, fg_color=("gray85","gray30"), corner_radius=0,
+            outer, height=1, fg_color=("gray85", "gray30"), corner_radius=0,
         ).pack(fill="x", padx=PAD, pady=(6, 0))
 
-    def _card_inner(self, card: ctk.CTkFrame) -> ctk.CTkFrame:
-        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner = ctk.CTkFrame(outer, fg_color="transparent")
         inner.pack(fill="both", padx=PAD, pady=(10, 14))
         return inner
+
+    def _radio_row(self, parent, text: str, variable, value,
+                   command=None, pady=(0, 4)):
+        """
+        Build a proper RTL-aware radio button row.
+        In LTR: ○  Text
+        In RTL: Text  ○   (circle on the right = reading-start in RTL)
+        CTkRadioButton always places the circle on the left. For RTL we put the
+        circle in a separate row and anchor text to the right.
+        """
+        if not is_rtl():
+            ctk.CTkRadioButton(
+                parent, text=text,
+                variable=variable, value=value,
+                command=command,
+                font=ctk.CTkFont("Segoe UI", 12),
+            ).pack(anchor="w", pady=pady)
+        else:
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(anchor="e", pady=pady, fill="x")
+            # Text on the left (reading-end), radio circle on the right (reading-start)
+            ctk.CTkLabel(
+                row, text=text,
+                font=ctk.CTkFont("Segoe UI", 12),
+                anchor="e",
+            ).pack(side="left", fill="x", expand=True, padx=(0, 8))
+            ctk.CTkRadioButton(
+                row, text="",
+                variable=variable, value=value,
+                command=command,
+                width=24,
+            ).pack(side="right")
+
+    def _check_row(self, parent, text: str, variable, pady=(0, 4)):
+        """
+        Build a proper RTL-aware checkbox row.
+        In LTR: ☐  Text
+        In RTL: Text  ☐   (box on the right = reading-start in RTL)
+        """
+        if not is_rtl():
+            ctk.CTkCheckBox(
+                parent, text=text,
+                variable=variable,
+                font=ctk.CTkFont("Segoe UI", 11),
+            ).pack(anchor="w", pady=pady)
+        else:
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(anchor="e", pady=pady, fill="x")
+            ctk.CTkLabel(
+                row, text=text,
+                font=ctk.CTkFont("Segoe UI", 11),
+                anchor="e",
+            ).pack(side="left", fill="x", expand=True, padx=(0, 8))
+            ctk.CTkCheckBox(
+                row, text="",
+                variable=variable,
+                width=24,
+            ).pack(side="right")
+
+    def _secondary_btn(self) -> dict:
+        return dict(fg_color=("gray80", "gray25"),
+                    hover_color=("gray70", "gray35"),
+                    text_color=("gray10", "gray90"))
+
+    def _ghost_btn(self) -> dict:
+        return dict(fg_color=("gray85", "gray20"),
+                    hover_color=("gray75", "gray30"),
+                    text_color=("gray10", "gray90"))
 
     # ── State helpers ──────────────────────────────────────────────────────
 
@@ -483,12 +520,12 @@ class VectorPage(ctk.CTkFrame):
             ver = gs.get_version(self._gs_exe)
             self._gs_badge.configure(
                 text=t("gs_ok", ver=ver),
-                text_color=("#16A34A","#4ADE80"),
+                text_color=("#16A34A", "#4ADE80"),
             )
         else:
             self._gs_badge.configure(
                 text=t("gs_missing"),
-                text_color=("#DC2626","#F87171"),
+                text_color=("#DC2626", "#F87171"),
             )
 
     def _refresh_list(self):
@@ -515,9 +552,9 @@ class VectorPage(ctk.CTkFrame):
                   self._convert_btn, self._out_entry, self._browse_btn,
                   self._dpi_entry):
             w.configure(state=s)
-        self._cancel_btn.configure(state="normal" if busy else "disabled")
         for btn, _ in self._preset_btns:
             btn.configure(state=s)
+        self._cancel_btn.configure(state="normal" if busy else "disabled")
 
     def _refresh_preset_colors(self):
         cur = self._dpi_var.get()
@@ -525,14 +562,10 @@ class VectorPage(ctk.CTkFrame):
             if dpi == cur:
                 btn.configure(
                     fg_color=ctk.ThemeManager.theme["CTkButton"]["fg_color"],
-                    text_color=("white","white"),
+                    text_color=("white", "white"),
                 )
             else:
-                btn.configure(
-                    fg_color=("gray80","gray25"),
-                    hover_color=("gray70","gray35"),
-                    text_color=("gray10","gray90"),
-                )
+                btn.configure(**self._ghost_btn())
 
     def _set_preset(self, dpi: int):
         self._dpi_var.set(dpi)
@@ -541,22 +574,18 @@ class VectorPage(ctk.CTkFrame):
         self._refresh_preset_colors()
 
     def _on_custom_dpi(self):
-        """User is typing a custom DPI — deselect all presets."""
         self._dpi_var.set(0)
         self._refresh_preset_colors()
 
     def _fmt_changed(self):
-        """Show/hide PNG-specific and JPG-specific options."""
-        is_png = self._fmt.get() == "png"
-        if is_png:
+        if self._fmt.get() == "png":
             self._jpg_section.pack_forget()
-            self._png_section.pack(fill="x", pady=(0, 4))
+            self._png_section.pack(fill="x", pady=(4, 0))
         else:
             self._png_section.pack_forget()
-            self._jpg_section.pack(fill="x", pady=(0, 4))
+            self._jpg_section.pack(fill="x", pady=(4, 0))
 
     def _save_mode_changed(self):
-        """Disable the folder entry when 'beside' is selected."""
         if self._out_mode.get() == "beside":
             self._out_entry.configure(state="disabled")
             self._browse_btn.configure(state="disabled")
@@ -564,13 +593,19 @@ class VectorPage(ctk.CTkFrame):
             self._out_entry.configure(state="normal")
             self._browse_btn.configure(state="normal")
 
+    def _is_window_focused(self) -> bool:
+        try:
+            return bool(self._shell and self._shell.focus_displayof() is not None)
+        except Exception:
+            return True
+
     # ── File operations ───────────────────────────────────────────────────
 
     def _add_files(self):
         paths = filedialog.askopenfilenames(
             title="Select EPS / AI files",
-            filetypes=[("Vector files","*.eps *.ai *.EPS *.AI"),
-                       ("All files","*.*")],
+            filetypes=[("Vector files", "*.eps *.ai *.EPS *.AI"),
+                       ("All files", "*.*")],
         )
         if paths:
             self._ingest(list(paths))
@@ -580,7 +615,7 @@ class VectorPage(ctk.CTkFrame):
         if not folder:
             return
         found: list[str] = []
-        for ext in ("*.eps","*.ai","*.EPS","*.AI"):
+        for ext in ("*.eps", "*.ai", "*.EPS", "*.AI"):
             found.extend(glob.glob(os.path.join(folder, ext)))
         if not found:
             self._log(t("log_no_eps"))
@@ -594,7 +629,7 @@ class VectorPage(ctk.CTkFrame):
             p = os.path.abspath(p)
             if p in existing:
                 continue
-            if os.path.splitext(p)[1].lower() not in (".eps",".ai"):
+            if os.path.splitext(p)[1].lower() not in (".eps", ".ai"):
                 continue
             self._files.append(p)
             existing.add(p)
@@ -646,7 +681,6 @@ class VectorPage(ctk.CTkFrame):
             messagebox.showerror("Studio Tools", t("err_gs"))
             return
 
-        # Read DPI from entry (may differ from preset)
         try:
             dpi = int(float(self._dpi_entry.get()))
             assert 1 <= dpi <= 6000
@@ -668,24 +702,24 @@ class VectorPage(ctk.CTkFrame):
         bg_white  = (self._bg.get() == "white") if fmt == "png" else True
         suffix    = self._suffix.get().strip()
 
-        # Persist prefs
-        prefs["fmt"]         = fmt
-        prefs["dpi"]         = dpi
-        prefs["jpg_quality"] = jpg_q
-        prefs["bg"]          = self._bg.get()
-        prefs["all_pages"]   = all_pages
-        prefs["suffix"]      = suffix
-        prefs["out_mode"]    = self._out_mode.get()
+        prefs["fmt"]          = fmt
+        prefs["dpi"]          = dpi
+        prefs["jpg_quality"]  = jpg_q
+        prefs["bg"]           = self._bg.get()
+        prefs["all_pages"]    = all_pages
+        prefs["suffix"]       = suffix
+        prefs["out_mode"]     = self._out_mode.get()
         if out_dir:
             prefs["last_out_dir"] = out_dir
         prefs.save()
 
-        self._cancel       = False
-        self._last_out     = out_dir
-        self._prog_total   = len(self._files)
+        self._cancel      = False
+        self._last_out    = out_dir
+        self._prog_total  = len(self._files)
         self._set_busy(True)
-        self._prog.set(0)     # real determinate: start at 0
-        self._status_lbl.configure(text=t("status_conv", i=0, n=self._prog_total, name="…"))
+        self._prog.set(0)
+        self._status_lbl.configure(
+            text=t("status_conv", i=0, n=self._prog_total, name="…"))
 
         threading.Thread(
             target=self._worker,
@@ -705,12 +739,10 @@ class VectorPage(ctk.CTkFrame):
                 self._q.put(("done", (ok, fail)))
                 return
 
-            name = os.path.basename(src)
-            base = os.path.splitext(name)[0] + suffix
-            dst_base = (
-                os.path.join(out_dir, base) if out_dir
-                else os.path.join(os.path.dirname(src), base)
-            )
+            name     = os.path.basename(src)
+            base     = os.path.splitext(name)[0] + suffix
+            dst_base = (os.path.join(out_dir, base) if out_dir
+                        else os.path.join(os.path.dirname(src), base))
             if first_out is None:
                 first_out = os.path.dirname(dst_base) or "."
 
@@ -726,19 +758,11 @@ class VectorPage(ctk.CTkFrame):
                 fail += 1
                 self._q.put(("log", f"✗  {name}  —  {e}"))
 
-            # Real progress: i/total
             self._q.put(("progress", i / total))
 
         self._last_out = out_dir or first_out
         self._q.put(("status", t("status_done", ok=ok, fail=fail)))
         self._q.put(("done", (ok, fail)))
-
-    def _is_window_focused(self) -> bool:
-        """Return True if the app window currently has focus."""
-        try:
-            return bool(self._shell and self._shell.focus_displayof() is not None)
-        except Exception:
-            return True   # assume focused if we can't tell — don't spam notifications
 
     def _drain(self):
         try:
@@ -749,37 +773,27 @@ class VectorPage(ctk.CTkFrame):
                 elif kind == "status":
                     self._status_lbl.configure(text=data)
                 elif kind == "progress":
-                    # Smooth real progress bar
                     self._prog.set(data)
                 elif kind == "done":
-                    ok, fail = data if data else (0, 0)
+                    ok, fail = data or (0, 0)
                     self._prog.set(1)
                     self._set_busy(False)
                     self._open_btn.configure(
-                        state="normal" if self._last_out else "disabled"
-                    )
-                    # ── Toast notification (only when window is not focused) ──
+                        state="normal" if self._last_out else "disabled")
+
                     if not self._is_window_focused():
                         if is_rtl():
-                            title = "Studio Tools — اكتمل التحويل ✓"
-                            msg   = (f"تم تصدير {ok} ملف بنجاح" +
+                            title = "Studio Tools — اكتمل التصدير ✓"
+                            msg   = (f"تم تصدير {ok} ملف" +
                                      (f"،  {fail} فشل" if fail else "") +
-                                     "\nاضغط هنا للعودة إلى التطبيق")
+                                     "\nانقر للعودة إلى التطبيق")
                         else:
-                            title = "Studio Tools — Conversion complete ✓"
-                            msg   = (f"{ok} file(s) exported successfully" +
+                            title = "Studio Tools — Done ✓"
+                            msg   = (f"{ok} file(s) exported" +
                                      (f",  {fail} failed" if fail else "") +
                                      "\nClick to return to Studio Tools")
-
-                        def _focus_app():
-                            if self._shell:
-                                self._shell.after(0, self._shell.focus_window)
-
-                        # Send notification in background so it never blocks the UI
                         threading.Thread(
-                            target=notify.send,
-                            args=(title, msg),
-                            daemon=True,
+                            target=notify.send, args=(title, msg), daemon=True,
                         ).start()
 
         except queue.Empty:
