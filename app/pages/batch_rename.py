@@ -134,12 +134,13 @@ class BatchRenamePage(ctk.CTkFrame):
         self._cancel = False
         self._q: queue.Queue = queue.Queue()
 
-        # Widgets we need to disable/enable
+        # Widgets — initialized early so callbacks during _build() are safe
         self._prefix_entry: ctk.CTkEntry | None = None
         self._suffix_entry: ctk.CTkEntry | None = None
         self._find_entry:   ctk.CTkEntry | None = None
         self._repl_entry:   ctk.CTkEntry | None = None
         self._num_option_widgets: list = []
+        self._prev_rows: list = []          # preview row widgets
 
         self._build()
         self.after(120, self._drain)
@@ -539,10 +540,11 @@ class BatchRenamePage(ctk.CTkFrame):
             self._copy_frame.pack(fill="x")
         else:
             self._copy_frame.pack_forget()
-        # Update button text
-        txt = "▶  Apply Copies" if is_copy else "▶  Rename Files"
-        self._rename_btn.configure(text=txt)
-        self._undo_btn.configure(state="disabled")
+        # Update button text (only after action bar is built)
+        if hasattr(self, "_rename_btn"):
+            txt = "▶  Apply Copies" if is_copy else "▶  Rename Files"
+            self._rename_btn.configure(text=txt)
+            self._undo_btn.configure(state="disabled")
         self._undo_map = None
         self._refresh_preview()
 
@@ -601,6 +603,9 @@ class BatchRenamePage(ctk.CTkFrame):
     # ── Preview ────────────────────────────────────────────────────────────
 
     def _refresh_preview(self, *_):
+        # Called during _build() before the right panel exists — skip safely
+        if not hasattr(self, "_prev_container"):
+            return
         for w in self._prev_rows:
             w.destroy()
         self._prev_rows.clear()
