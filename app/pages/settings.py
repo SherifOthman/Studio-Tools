@@ -4,6 +4,7 @@ import customtkinter as ctk
 
 from app.core.prefs   import prefs
 from app.core.strings import t
+from app.core.palette  import DIVIDER, EDGE, ROW, TEXT_SUB
 
 PAD = 16
 
@@ -35,7 +36,7 @@ class SettingsPage(ctk.CTkFrame):
         ctk.CTkLabel(hdr, text=t("set_title"),
                      font=ctk.CTkFont("Segoe UI", 22, "bold"),
                      anchor="w").pack(side="left", padx=PAD, pady=18)
-        ctk.CTkFrame(self, height=1, fg_color=("gray78", "gray28"),
+        ctk.CTkFrame(self, height=1, fg_color=EDGE,
                      corner_radius=0).grid(row=0, column=0, sticky="sew")
 
         scroll = ctk.CTkScrollableFrame(self, corner_radius=0,
@@ -70,7 +71,7 @@ class SettingsPage(ctk.CTkFrame):
         """One clickable theme row."""
         card = ctk.CTkFrame(
             parent,
-            fg_color=colour if active else ("gray88", "gray20"),
+            fg_color=colour if active else ROW,
             corner_radius=10,
             cursor="hand2",
         )
@@ -147,7 +148,7 @@ class SettingsPage(ctk.CTkFrame):
         ctk.CTkLabel(outer, text=title,
                      font=ctk.CTkFont("Segoe UI", 13, "bold"),
                      anchor="w").pack(anchor="w", padx=PAD, pady=(12, 0))
-        ctk.CTkFrame(outer, height=1, fg_color=("gray82", "gray30"),
+        ctk.CTkFrame(outer, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", padx=PAD, pady=(6, 0))
         inner = ctk.CTkFrame(outer, fg_color="transparent")
         inner.pack(fill="both", padx=PAD, pady=(10, 14))

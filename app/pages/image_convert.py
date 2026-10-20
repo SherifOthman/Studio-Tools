@@ -19,6 +19,11 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, UnidentifiedImageError
 
+from app.core.palette import (CHIP, CHIP_HOVER, CHIP_TEXT, DIVIDER, EDGE,
+                              GHOST, GHOST_HOVER, GHOST_TEXT,
+                              SEC, SEC_BORDER, SEC_HOVER, SEC_TEXT,
+                              TEXT, TEXT_DISABLED, TEXT_SUB)
+
 PAD = 16
 
 # All formats Pillow can handle well
@@ -152,10 +157,10 @@ class ImageConvertPage(ctk.CTkFrame):
                                       pady=(14, 2), sticky="w")
         ctk.CTkLabel(hdr, text="Convert images between any formats  ·  originals never changed",
                      font=ctk.CTkFont("Segoe UI", 11),
-                     text_color=("gray40", "gray60"),
+                     text_color=TEXT_SUB,
                      anchor="w").grid(row=1, column=0, padx=(PAD, 10),
                                       pady=(0, 10), sticky="w")
-        ctk.CTkFrame(self, height=1, fg_color=("gray82", "gray28"),
+        ctk.CTkFrame(self, height=1, fg_color=EDGE,
                      corner_radius=0).grid(row=0, column=0, sticky="sew")
 
         # Scrollable body
@@ -181,7 +186,7 @@ class ImageConvertPage(ctk.CTkFrame):
         bar = ctk.CTkFrame(self, corner_radius=0, height=64)
         bar.grid(row=2, column=0, sticky="ew")
         bar.grid_propagate(False)
-        ctk.CTkFrame(bar, height=1, fg_color=("gray82", "gray28"),
+        ctk.CTkFrame(bar, height=1, fg_color=EDGE,
                      corner_radius=0).pack(fill="x", side="top")
         inner = ctk.CTkFrame(bar, fg_color="transparent")
         inner.pack(fill="both", expand=True)
@@ -199,7 +204,7 @@ class ImageConvertPage(ctk.CTkFrame):
         self._status_lbl = ctk.CTkLabel(
             inner, text="Ready — add images, then press Convert",
             font=ctk.CTkFont("Segoe UI", 11),
-            text_color=("gray40", "gray60"), anchor="w")
+            text_color=TEXT_SUB, anchor="w")
         self._prog = ctk.CTkProgressBar(inner, height=6, corner_radius=3)
         self._prog.set(0)
 
@@ -230,7 +235,7 @@ class ImageConvertPage(ctk.CTkFrame):
 
         self._count_lbl = ctk.CTkLabel(br, text="No files added yet",
                                         font=ctk.CTkFont("Segoe UI", 11),
-                                        text_color=("gray40", "gray60"))
+                                        text_color=TEXT_SUB)
         self._count_lbl.pack(side="right", padx=4)
 
         self._file_box = ctk.CTkTextbox(inner, height=130, state="disabled",
@@ -268,7 +273,7 @@ class ImageConvertPage(ctk.CTkFrame):
             self._alpha_frame,
             text="Applies when source image has transparency (PNG, WEBP…)",
             font=ctk.CTkFont("Segoe UI", 10),
-            text_color=("gray40", "gray60"),
+            text_color=TEXT_SUB,
             anchor="w",
         ).pack(anchor="w", pady=(2, 0))
 
@@ -298,11 +303,11 @@ class ImageConvertPage(ctk.CTkFrame):
         ctk.CTkLabel(inner,
                      text="95 = visually lossless.  100 = maximum quality (larger file).",
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=TEXT_SUB,
                      anchor="w", wraplength=280,
                      ).pack(anchor="w", pady=(0, 14))
 
-        ctk.CTkFrame(inner, height=1, fg_color=("gray85", "gray30"),
+        ctk.CTkFrame(inner, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", pady=(0, 12))
 
         # Resize option
@@ -311,11 +316,11 @@ class ImageConvertPage(ctk.CTkFrame):
                      anchor="w").pack(anchor="w")
 
         self._resize_en = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(inner, text="Resize output images",
-                         variable=self._resize_en,
-                         command=self._resize_toggle,
-                         font=ctk.CTkFont("Segoe UI", 11),
-                         ).pack(anchor="w", pady=(6, 6))
+        self._resize_chk = ctk.CTkCheckBox(inner, text="Resize output images",
+                                            variable=self._resize_en,
+                                            command=self._resize_toggle,
+                                            font=ctk.CTkFont("Segoe UI", 11))
+        self._resize_chk.pack(anchor="w", pady=(6, 6))
 
         self._resize_frame = ctk.CTkFrame(inner, fg_color="transparent")
         rrow = ctk.CTkFrame(self._resize_frame, fg_color="transparent")
@@ -333,10 +338,10 @@ class ImageConvertPage(ctk.CTkFrame):
         ctk.CTkLabel(self._resize_frame,
                      text="Leave a dimension blank to scale proportionally.",
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=TEXT_SUB,
                      anchor="w").pack(anchor="w", pady=(4, 0))
 
-        ctk.CTkFrame(inner, height=1, fg_color=("gray85", "gray30"),
+        ctk.CTkFrame(inner, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", pady=(12, 12))
 
         # Suffix
@@ -352,7 +357,7 @@ class ImageConvertPage(ctk.CTkFrame):
         ctk.CTkLabel(suf_row,
                      text="e.g.  _web  →  logo_web.png",
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=TEXT_SUB,
                      ).pack(side="left")
 
     # ── Save card ───────────────────────────────────────────────────────────
@@ -415,27 +420,20 @@ class ImageConvertPage(ctk.CTkFrame):
         ctk.CTkLabel(outer, text=title,
                      font=ctk.CTkFont("Segoe UI", 13, "bold"),
                      anchor="w").pack(anchor="w", padx=PAD, pady=(12, 0))
-        ctk.CTkFrame(outer, height=1, fg_color=("gray85", "gray30"),
+        ctk.CTkFrame(outer, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", padx=PAD, pady=(6, 0))
         inner = ctk.CTkFrame(outer, fg_color="transparent")
         inner.pack(fill="both", padx=PAD, pady=(10, 14))
         return inner
 
     def _sec(self) -> dict:
-        return dict(
-            fg_color=("gray78", "gray28"),
-            hover_color=("gray68", "gray38"),
-            text_color=("gray10", "gray95"),
-            text_color_disabled=("gray45", "gray55"),
-        )
+        return dict(fg_color=SEC,
+                    hover_color=SEC_HOVER, text_color=SEC_TEXT,
+                    text_color_disabled=TEXT_DISABLED)
 
     def _ghost(self) -> dict:
-        return dict(
-            fg_color=("gray82", "gray22"),
-            hover_color=("gray72", "gray32"),
-            text_color=("gray10", "gray95"),
-            text_color_disabled=("gray45", "gray55"),
-        )
+        return dict(fg_color=GHOST, hover_color=GHOST_HOVER,
+                    text_color=GHOST_TEXT, text_color_disabled=TEXT_DISABLED)
 
     def _fmt_changed(self):
         fmt = self._out_fmt.get()
@@ -458,7 +456,10 @@ class ImageConvertPage(ctk.CTkFrame):
 
     def _resize_toggle(self):
         if self._resize_en.get():
-            self._resize_frame.pack(fill="x", pady=(0, 4))
+            # Pack right after the checkbox: a plain pack() appends at the end
+            # of the card, which dropped Width/Height under "Filename suffix".
+            self._resize_frame.pack(anchor="w", fill="x", pady=(0, 4),
+                                    after=self._resize_chk)
         else:
             self._resize_frame.pack_forget()
 

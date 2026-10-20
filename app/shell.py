@@ -6,6 +6,8 @@ import customtkinter as ctk
 
 from app.core.prefs   import prefs
 from app.core.strings import t
+from app.core.palette import EDGE, NAV_HOVER, TEXT_SUB
+from app.core.palette  import EDGE, NAV_HOVER
 
 NAV = [
     ("vector",   "⟳",  "nav_vector"),
@@ -43,10 +45,14 @@ def apply_theme(key: str) -> None:
 
 class Shell(ctk.CTk):
     def __init__(self):
-        super().__init__()
-
+        # Theme + appearance must be selected BEFORE the CTk root exists:
+        # the root window reads its colours from the theme at construction
+        # time, so applying afterwards left it on the default theme's
+        # background (a different grey from every card drawn on top of it).
         apply_theme(prefs.get("theme", "blue"))
         ctk.set_appearance_mode(prefs.get("appearance", "dark"))
+
+        super().__init__()
 
         self.title(t("app_name"))
         self.geometry("1100x730")
@@ -74,7 +80,7 @@ class Shell(ctk.CTk):
         self._sidebar.grid(row=0, column=0, sticky="nsew")
 
         self._separator = ctk.CTkFrame(self, width=1, corner_radius=0,
-                                        fg_color=("gray78", "gray22"))
+                                        fg_color=EDGE)
         self._separator.grid(row=0, column=1, sticky="nsew")
 
         self._page_container = ctk.CTkFrame(self, corner_radius=0,
@@ -102,10 +108,10 @@ class Shell(ctk.CTk):
                      font=ctk.CTkFont("Segoe UI", 18, "bold")).pack(pady=(2, 0))
         ctk.CTkLabel(brand, text=t("tagline"),
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray50", "gray55"),
+                     text_color=TEXT_SUB,
                      wraplength=SIDEBAR_W - 28).pack(pady=(2, 0))
 
-        ctk.CTkFrame(sb, height=1, fg_color=("gray78", "gray30"),
+        ctk.CTkFrame(sb, height=1, fg_color=EDGE,
                      corner_radius=0).grid(row=1, column=0, sticky="ew",
                                            padx=12, pady=(4, 8))
 
@@ -118,7 +124,7 @@ class Shell(ctk.CTk):
                 height=50,
                 corner_radius=10,
                 fg_color="transparent",
-                hover_color=("gray82", "gray28"),
+                hover_color=NAV_HOVER,
                 text_color=("gray15", "gray90"),
                 font=ctk.CTkFont("Segoe UI", 13),
                 command=lambda p=pid: self._show(p),
@@ -136,12 +142,12 @@ class Shell(ctk.CTk):
     def _build_pages(self):
         from app.pages.vector        import VectorPage
         from app.pages.image_convert import ImageConvertPage
-        from app.pages.coming_soon   import ComingSoonPage
+        from app.pages.batch_rename  import BatchRenamePage
         from app.pages.settings      import SettingsPage
 
         self._pages["vector"]   = VectorPage(self._page_container, shell=self)
         self._pages["images"]   = ImageConvertPage(self._page_container)
-        self._pages["rename"]   = ComingSoonPage(self._page_container, page_id="rename")
+        self._pages["rename"]   = BatchRenamePage(self._page_container)
         self._pages["settings"] = SettingsPage(self._page_container,
                                                 on_theme_change=self._on_theme)
 
@@ -169,7 +175,7 @@ class Shell(ctk.CTk):
             else:
                 btn.configure(
                     fg_color="transparent",
-                    hover_color=("gray82", "gray28"),
+                    hover_color=NAV_HOVER,
                     text_color=("gray15", "gray90"))
 
     def _on_theme(self, tid: str):

@@ -11,6 +11,10 @@ import customtkinter as ctk
 from app.core        import gs, notify
 from app.core.prefs  import prefs
 from app.core.strings import t
+from app.core.palette import (CHIP, CHIP_HOVER, CHIP_TEXT, DIVIDER, EDGE,
+                              GHOST, GHOST_HOVER, GHOST_TEXT,
+                              SEC, SEC_BORDER, SEC_HOVER, SEC_TEXT,
+                              TEXT, TEXT_DISABLED, TEXT_SUB)
 
 PRESETS = [("q_screen", 72), ("q_web", 150), ("q_print", 300), ("q_hires", 600)]
 PAD = 16
@@ -50,7 +54,7 @@ class VectorPage(ctk.CTkFrame):
                                       pady=(14, 2), sticky="w")
         ctk.CTkLabel(hdr, text=t("vec_subtitle"),
                      font=ctk.CTkFont("Segoe UI", 11),
-                     text_color=("gray40", "gray60"),
+                     text_color=(TEXT_SUB[0], TEXT_SUB[1]),
                      anchor="w").grid(row=1, column=0, padx=(PAD, 10),
                                       pady=(0, 10), sticky="w")
 
@@ -60,7 +64,7 @@ class VectorPage(ctk.CTkFrame):
         self._gs_badge.grid(row=0, column=2, rowspan=2, padx=PAD, sticky="e")
 
         # Separator under header
-        ctk.CTkFrame(self, height=1, fg_color=("gray82", "gray28"),
+        ctk.CTkFrame(self, height=1, fg_color=EDGE,
                      corner_radius=0).grid(row=0, column=0, sticky="sew")
 
         # Scrollable body
@@ -85,7 +89,7 @@ class VectorPage(ctk.CTkFrame):
         bar = ctk.CTkFrame(self, corner_radius=0, height=64)
         bar.grid(row=2, column=0, sticky="ew")
         bar.grid_propagate(False)
-        ctk.CTkFrame(bar, height=1, fg_color=("gray82", "gray28"),
+        ctk.CTkFrame(bar, height=1, fg_color=EDGE,
                      corner_radius=0).pack(fill="x", side="top")
         inner = ctk.CTkFrame(bar, fg_color="transparent")
         inner.pack(fill="both", expand=True)
@@ -102,7 +106,7 @@ class VectorPage(ctk.CTkFrame):
                                         **self._sec(), command=self._open_out)
         self._status_lbl = ctk.CTkLabel(inner, text=t("status_ready"),
                                          font=ctk.CTkFont("Segoe UI", 11),
-                                         text_color=("gray40", "gray60"),
+                                         text_color=(TEXT_SUB[0], TEXT_SUB[1]),
                                          anchor="w")
         self._prog = ctk.CTkProgressBar(inner, height=6, corner_radius=3)
         self._prog.set(0)
@@ -134,7 +138,7 @@ class VectorPage(ctk.CTkFrame):
 
         self._count_lbl = ctk.CTkLabel(br, text=t("n_files_0"),
                                         font=ctk.CTkFont("Segoe UI", 11),
-                                        text_color=("gray40", "gray60"))
+                                        text_color=(TEXT_SUB[0], TEXT_SUB[1]))
         self._count_lbl.pack(side="right", padx=4)
 
         self._file_box = ctk.CTkTextbox(inner, height=130, state="disabled",
@@ -171,7 +175,7 @@ class VectorPage(ctk.CTkFrame):
                             ).pack(anchor="w", pady=(0, 4))
         ctk.CTkLabel(self._png_sec, text=t("fmt_png_hint"),
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=(TEXT_SUB[0], TEXT_SUB[1]),
                      anchor="w", wraplength=220,
                      ).pack(anchor="w", pady=(2, 0))
 
@@ -196,7 +200,7 @@ class VectorPage(ctk.CTkFrame):
 
         ctk.CTkLabel(self._jpg_sec, text=t("jpg_q_hint"),
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=(TEXT_SUB[0], TEXT_SUB[1]),
                      anchor="w", wraplength=220,
                      ).pack(anchor="w", pady=(4, 0))
 
@@ -221,7 +225,7 @@ class VectorPage(ctk.CTkFrame):
 
         ctk.CTkLabel(inner, text=t("q_hint"),
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=(TEXT_SUB[0], TEXT_SUB[1]),
                      anchor="w", wraplength=320,
                      ).pack(anchor="w", pady=(0, 10))
 
@@ -238,7 +242,7 @@ class VectorPage(ctk.CTkFrame):
         self._dpi_entry.bind("<KeyRelease>", lambda _: self._on_custom_dpi())
         self._dpi_entry.pack(side="left")
 
-        ctk.CTkFrame(inner, height=1, fg_color=("gray85", "gray30"),
+        ctk.CTkFrame(inner, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", pady=(0, 10))
 
         # Multi-page
@@ -252,7 +256,7 @@ class VectorPage(ctk.CTkFrame):
                          ).pack(anchor="w", pady=(4, 2))
         ctk.CTkLabel(inner, text=t("pages_hint"),
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=(TEXT_SUB[0], TEXT_SUB[1]),
                      anchor="w",
                      ).pack(anchor="w", pady=(0, 10))
 
@@ -268,7 +272,7 @@ class VectorPage(ctk.CTkFrame):
                       justify="left").pack(side="left", padx=(0, 8))
         ctk.CTkLabel(suf_row, text=t("suffix_hint"),
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=("gray40", "gray60"),
+                     text_color=(TEXT_SUB[0], TEXT_SUB[1]),
                      ).pack(side="left")
 
     def _build_save(self, parent):
@@ -329,28 +333,30 @@ class VectorPage(ctk.CTkFrame):
         ctk.CTkLabel(outer, text=title,
                      font=ctk.CTkFont("Segoe UI", 13, "bold"),
                      anchor="w").pack(anchor="w", padx=PAD, pady=(12, 0))
-        ctk.CTkFrame(outer, height=1, fg_color=("gray85", "gray30"),
+        ctk.CTkFrame(outer, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", padx=PAD, pady=(6, 0))
         inner = ctk.CTkFrame(outer, fg_color="transparent")
         inner.pack(fill="both", padx=PAD, pady=(10, 14))
         return inner
 
     def _sec(self) -> dict:
-        """Secondary button — visible in both light and dark mode, even when disabled."""
+        """Secondary outlined button — clearly clickable in both modes."""
         return dict(
-            fg_color=("gray78", "gray28"),
-            hover_color=("gray68", "gray38"),
-            text_color=("gray10", "gray95"),
-            text_color_disabled=("gray45", "gray55"),
+            fg_color=SEC,
+            border_width=1,
+            border_color=SEC_BORDER,
+            hover_color=SEC_HOVER,
+            text_color=SEC_TEXT,
+            text_color_disabled=TEXT_DISABLED,
         )
 
     def _ghost(self) -> dict:
-        """Ghost/tertiary button."""
+        """Tertiary ghost button — light fill, readable text."""
         return dict(
-            fg_color=("gray82", "gray22"),
-            hover_color=("gray72", "gray32"),
-            text_color=("gray10", "gray95"),
-            text_color_disabled=("gray45", "gray55"),
+            fg_color=GHOST,
+            hover_color=GHOST_HOVER,
+            text_color=GHOST_TEXT,
+            text_color_disabled=TEXT_DISABLED,
         )
 
     # ── State ─────────────────────────────────────────────────────────────
@@ -397,9 +403,16 @@ class VectorPage(ctk.CTkFrame):
             if dpi == cur:
                 btn.configure(
                     fg_color=ctk.ThemeManager.theme["CTkButton"]["fg_color"],
-                    text_color=("white", "white"))
+                    hover_color=ctk.ThemeManager.theme["CTkButton"]["hover_color"],
+                    text_color=("#FFFFFF", "#FFFFFF"),
+                    border_width=0)
             else:
-                btn.configure(**self._ghost())
+                btn.configure(
+                    fg_color=CHIP,
+                    hover_color=CHIP_HOVER,
+                    text_color=CHIP_TEXT,
+                    text_color_disabled=TEXT_DISABLED,
+                    border_width=0)
 
     def _set_preset(self, dpi: int):
         self._dpi_var.set(dpi)
