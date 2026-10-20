@@ -9,13 +9,7 @@ PRIMARY ENGINE:  BRIA RMBG v1.4
   • Commercially licensed for professional use
   • ~175 MB download (once), runs on CPU
 
-FALLBACK ENGINE:  Smart Color Removal
-  • For simple flat-color backgrounds when AI is unavailable
-  • Auto-detects background color, flood-fills edges
-  • Good for icons and simple illustrations
-
-The page auto-selects BRIA if transformers is installed; otherwise falls back
-to Smart Color mode. Output is always transparent PNG (or custom fill).
+The model is cached globally after first load for speed.
 """
 
 import io
@@ -41,30 +35,48 @@ BRIA_AVAILABLE = False
 try:
     from transformers import AutoModelForImageSegmentation
     import torch
+    from torchvision import transforms
     BRIA_AVAILABLE = True
 except ImportError:
     pass
 
+# Global model cache
+_BRIA_MODEL = None
+_BRIA_DEVICE = None
+
 
 # ── BRIA RMBG Engine ────────────────────────────────────────────────────────
+
+def _load_bria_model():
+    """Load and cache the BRIA model (called once)."""
+    global _BRIA_MODEL, _BRIA_DEVICE
+    if _BRIA_MODEL is not None:
+        return _BRIA_MODEL, _BRIA_DEVICE
+    
+    from transformers import AutoModelForImageSegmentation
+    import torch
+    
+    _BRIA_DEVICE = torch.device("cpu")
+    _BRIA_MODEL = AutoModelForImageSegmentation.from_pretrained(
+        "briaai/RMBG-1.4",
+        trust_remote_code=True)
+    _BRIA_MODEL.to(_BRIA_DEVICE)
+    _BRIA_MODEL.eval()
+    
+    return _BRIA_MODEL, _BRIA_DEVICE
+
 
 def bria_remove_bg(img: Image.Image) -> Image.Image:
     """
     Industry-grade background removal using BRIA RMBG v1.4.
     Pixel-perfect edges, handles complex backgrounds + fine details.
     """
-    from transformers import AutoModelForImageSegmentation
-    import torch
     from torchvision import transforms
-
+    import torch
+    
     # Load model (cached after first use)
-    model = AutoModelForImageSegmentation.from_pretrained(
-        "briaai/RMBG-1.4",
-        trust_remote_code=True)
-    device = torch.device("cpu")
-    model.to(device)
-    model.eval()
-
+    model, device = _load_bria_model()
+    
     # Preprocess
     orig_size = img.size
     transform = transforms.Compose([
@@ -73,24 +85,36 @@ def bria_remove_bg(img: Image.Image) -> Image.Image:
         transforms.Normalize([0.485, 0.456, 0.406],
                              [0.229, 0.224, 0.225])
     ])
-
+    
     img_rgb = img.convert("RGB")
     input_tensor = transform(img_rgb).unsqueeze(0).to(device)
-
+    
     # Inference
     with torch.no_grad():
         preds = model(input_tensor)[-1].sigmoid().cpu()
     pred_mask = preds[0].squeeze()
-
-    # Resize mask back to original size
+    
+    # Convert to PIL and resize back
     mask_pil = transforms.ToPILImage()(pred_mask)
     mask_pil = mask_pil.resize(orig_size, Image.Resampling.LANCZOS)
-
-    # Apply mask
-    result = Image.new("RGBA", orig_size, (0, 0, 0, 0))
-    result.paste(img_rgb, (0, 0))
+    
+    # Convert mask to numpy for post-processing
+    mask_arr = np.array(mask_pil, dtype=np.float32) / 255.0
+    
+    # QUALITY IMPROVEMENT: Edge refinement
+    # 1. Contrast stretch to remove semi-transparent halos
+    low_thresh = 0.02    # Pixels below this → fully transparent
+    high_thresh = 0.98   # Pixels above this → fully opaque
+    mask_arr = np.clip((mask_arr - low_thresh) / (high_thresh - low_thresh), 0, 1)
+    
+    # 2. Light edge smoothing (1px feather) for anti-aliasing
+    mask_pil = Image.fromarray((mask_arr * 255).astype(np.uint8), mode="L")
+    mask_pil = mask_pil.filter(ImageFilter.GaussianBlur(radius=0.5))
+    
+    # Apply mask to create RGBA result
+    result = img_rgb.convert("RGBA")
     result.putalpha(mask_pil)
-
+    
     return result
 
 
@@ -104,7 +128,7 @@ def smart_remove_bg(img: Image.Image, tolerance: int = 30,
     orig = img.convert("RGBA")
     arr  = np.array(orig, dtype=np.float32)
     H, W = arr.shape[:2]
-
+    
     # Sample corners to detect bg color
     sample_coords = [
         (0, 0), (0, W//2), (0, W-1),
@@ -114,17 +138,17 @@ def smart_remove_bg(img: Image.Image, tolerance: int = 30,
     ]
     samples = np.array([arr[r, c, :3] for r, c in sample_coords])
     bg_color = np.median(samples, axis=0)
-
+    
     # Color-distance mask
     diff = np.sqrt(np.sum((arr[:, :, :3] - bg_color) ** 2, axis=2))
     mask = (diff > tolerance).astype(np.uint8) * 255
-
+    
     # Edge smoothing
     if smooth:
         m_img = Image.fromarray(mask, mode="L")
         m_img = m_img.filter(ImageFilter.GaussianBlur(radius=0.5))
         mask = np.array(m_img)
-
+    
     # Apply mask
     result = np.array(orig)
     result[:, :, 3] = mask
@@ -134,24 +158,24 @@ def smart_remove_bg(img: Image.Image, tolerance: int = 30,
 # ── UI ─────────────────────────────────────────────────────────────────────
 
 class BgRemovePage(ctk.CTkFrame):
-
+    
     def __init__(self, master, **kw):
         super().__init__(master, corner_radius=0, fg_color="transparent", **kw)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-
+        
         self._files: list[str] = []
         self._busy   = False
         self._cancel = False
         self._q: queue.Queue = queue.Queue()
         self._fill_color: str | None = None
         self._last_out: str | None = None
-
+        
         self._build()
         self.after(120, self._drain)
-
+    
     # ── Layout ─────────────────────────────────────────────────────────────
-
+    
     def _build(self):
         hdr = ctk.CTkFrame(self, corner_radius=0, height=70)
         hdr.grid(row=0, column=0, sticky="ew")
@@ -161,8 +185,8 @@ class BgRemovePage(ctk.CTkFrame):
                      font=ctk.CTkFont("Segoe UI", 22, "bold"),
                      anchor="w").grid(row=0, column=0, padx=(PAD, 10),
                                       pady=(14, 2), sticky="w")
-
-        engine_txt = "BRIA AI (industry-grade)" if BRIA_AVAILABLE else "Smart Color Removal"
+        
+        engine_txt = "BRIA AI v1.4 (industry-grade)" if BRIA_AVAILABLE else "Smart Color Removal"
         ctk.CTkLabel(hdr,
                      text=f"Professional background removal  ·  "
                           f"engine: {engine_txt}  ·  pixel-perfect for stock sites",
@@ -171,18 +195,18 @@ class BgRemovePage(ctk.CTkFrame):
             row=1, column=0, padx=(PAD, 10), pady=(0, 10), sticky="w")
         ctk.CTkFrame(self, height=1, fg_color=EDGE,
                      corner_radius=0).grid(row=0, column=0, sticky="sew")
-
+        
         scroll = ctk.CTkScrollableFrame(self, corner_radius=0,
                                          fg_color="transparent")
         scroll.grid(row=1, column=0, sticky="nsew")
         scroll.grid_columnconfigure(0, weight=1)
-
+        
         self._build_files_card(scroll)
         self._build_engine_card(scroll)
         self._build_output_card(scroll)
         self._build_save_card(scroll)
         self._build_log_card(scroll)
-
+        
         bar = ctk.CTkFrame(self, corner_radius=0, height=64)
         bar.grid(row=2, column=0, sticky="ew")
         bar.grid_propagate(False)
@@ -190,7 +214,7 @@ class BgRemovePage(ctk.CTkFrame):
                      corner_radius=0).pack(fill="x", side="top")
         inner = ctk.CTkFrame(bar, fg_color="transparent")
         inner.pack(fill="both", expand=True)
-
+        
         self._run_btn = ctk.CTkButton(
             inner, text="▶  Remove Backgrounds", width=190, height=42,
             font=ctk.CTkFont("Segoe UI", 14, "bold"), command=self._run)
@@ -210,20 +234,20 @@ class BgRemovePage(ctk.CTkFrame):
             font=ctk.CTkFont("Segoe UI", 11), text_color=TEXT_SUB, anchor="w")
         self._prog = ctk.CTkProgressBar(inner, height=6, corner_radius=3)
         self._prog.set(0)
-
+        
         self._run_btn.pack(   side="left", padx=(PAD, 0), pady=10)
         self._cancel_btn.pack(side="left", padx=(8,  0),  pady=10)
         self._open_btn.pack(  side="left", padx=(8,  0),  pady=10)
         self._status_lbl.pack(side="left", padx=(12, 0),  pady=10)
         self._prog.pack(side="right", padx=PAD, pady=10, fill="x", expand=True)
-
+    
     # ── Cards ──────────────────────────────────────────────────────────────
-
+    
     def _build_files_card(self, parent):
         inner = self._card(parent, "① Images", pack=True, top_pad=PAD)
         br = ctk.CTkFrame(inner, fg_color="transparent")
         br.pack(fill="x", pady=(0, 8))
-
+        
         self._btn_add    = ctk.CTkButton(br, text="📄  Add Images", width=130,
                                           command=self._add_files)
         self._btn_folder = ctk.CTkButton(br, text="📂  Add Folder", width=130,
@@ -243,20 +267,20 @@ class BgRemovePage(ctk.CTkFrame):
                                           command=self._clear)
         for b in (self._btn_add, self._btn_folder, self._btn_rm, self._btn_clear):
             b.pack(side="left", padx=(0, 6))
-
+        
         self._count_lbl = ctk.CTkLabel(br, text="0 images",
                                         font=ctk.CTkFont("Segoe UI", 11),
                                         text_color=TEXT_SUB)
         self._count_lbl.pack(side="right", padx=4)
-
+        
         self._file_box = ctk.CTkTextbox(inner, height=120, state="disabled",
                                          font=ctk.CTkFont("Consolas", 11),
                                          wrap="none")
         self._file_box.pack(fill="x")
-
+    
     def _build_engine_card(self, parent):
         inner = self._card(parent, "② Removal Engine", pack=True)
-
+        
         if BRIA_AVAILABLE:
             # BRIA info
             ctk.CTkLabel(inner, text="✦  BRIA RMBG v1.4  (Industry-Grade AI)",
@@ -268,17 +292,11 @@ class BgRemovePage(ctk.CTkFrame):
                               "• Pixel-perfect edges — handles hair, fur, glass, fine details\n"
                               "• Works on photos AND flat clipart/illustrations\n"
                               "• Commercially licensed for professional use\n"
-                              "• Model downloads automatically (~175 MB, once only)",
+                              "• Model downloads automatically (~175 MB, once only)\n"
+                              "• Edge refinement post-processing for stock-site quality",
                          font=ctk.CTkFont("Segoe UI", 11),
                          text_color=TEXT_SUB, anchor="w", justify="left").pack(anchor="w")
-
-            ctk.CTkFrame(inner, height=1, fg_color=DIVIDER,
-                         corner_radius=0).pack(fill="x", pady=(10, 8))
-
-            # Tolerance slider (only for Smart fallback — hidden when BRIA used)
-            self._tol_frame = ctk.CTkFrame(inner, fg_color="transparent")
-            # Not packed by default
-
+        
         else:
             # Smart Color mode (fallback)
             ctk.CTkLabel(inner, text="Smart Color Removal  (Fallback Mode)",
@@ -290,14 +308,14 @@ class BgRemovePage(ctk.CTkFrame):
                               "To enable BRIA: pip install transformers torch",
                          font=ctk.CTkFont("Segoe UI", 11),
                          text_color=TEXT_SUB, anchor="w", justify="left").pack(anchor="w")
-
+            
             ctk.CTkFrame(inner, height=1, fg_color=DIVIDER,
                          corner_radius=0).pack(fill="x", pady=(10, 8))
-
+            
             ctk.CTkLabel(inner, text="Tolerance:",
                          font=ctk.CTkFont("Segoe UI", 11, "bold"),
                          anchor="w").pack(anchor="w", pady=(0, 4))
-
+            
             sl_row = ctk.CTkFrame(inner, fg_color="transparent")
             sl_row.pack(fill="x")
             self._tolerance = ctk.IntVar(value=30)
@@ -310,21 +328,21 @@ class BgRemovePage(ctk.CTkFrame):
             tol_lbl.pack(side="left", padx=(8, 0))
             self._tolerance.trace_add("write",
                 lambda *_: tol_lbl.configure(text=str(self._tolerance.get())))
-
+            
             ctk.CTkLabel(inner,
                          text="0 = exact match  ·  30 = recommended  ·  "
                               "80+ = aggressive",
                          font=ctk.CTkFont("Segoe UI", 10),
                          text_color=TEXT_SUB, anchor="w",
                          wraplength=400, justify="left").pack(anchor="w", pady=(6, 0))
-
+    
     def _build_output_card(self, parent):
         inner = self._card(parent, "③ Output Options", pack=True)
-
+        
         ctk.CTkLabel(inner, text="Background replacement:",
                      font=ctk.CTkFont("Segoe UI", 11, "bold"),
                      anchor="w").pack(anchor="w", pady=(0, 8))
-
+        
         self._fill_mode = ctk.StringVar(value="transparent")
         ctk.CTkRadioButton(inner,
                             text="Transparent  (PNG with alpha)  ← best for stock sites",
@@ -336,7 +354,7 @@ class BgRemovePage(ctk.CTkFrame):
                             variable=self._fill_mode, value="white",
                             font=ctk.CTkFont("Segoe UI", 12),
                             ).pack(anchor="w", pady=(0, 6))
-
+        
         color_row = ctk.CTkFrame(inner, fg_color="transparent")
         color_row.pack(anchor="w", pady=(0, 12))
         ctk.CTkRadioButton(color_row, text="Custom colour:",
@@ -348,10 +366,10 @@ class BgRemovePage(ctk.CTkFrame):
             corner_radius=6, fg_color="#FFFFFF", cursor="hand2")
         self._color_swatch.pack(side="left", padx=(8, 0))
         self._color_swatch.bind("<Button-1>", lambda _: self._pick_color())
-
+        
         ctk.CTkFrame(inner, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", pady=(0, 10))
-
+        
         ctk.CTkLabel(inner, text="Output filename:",
                      font=ctk.CTkFont("Segoe UI", 11, "bold"),
                      anchor="w").pack(anchor="w", pady=(0, 4))
@@ -366,17 +384,17 @@ class BgRemovePage(ctk.CTkFrame):
         ctk.CTkLabel(suf_row, text=".png",
                      font=ctk.CTkFont("Segoe UI", 11),
                      text_color=TEXT_SUB).pack(side="left", padx=(4, 0))
-
+    
     def _build_save_card(self, parent):
         inner = self._card(parent, "④ Where to Save", pack=True)
         self._out_mode = ctk.StringVar(value="beside")
-
+        
         ctk.CTkRadioButton(inner, text="  Next to each original file",
                             variable=self._out_mode, value="beside",
                             command=self._save_changed,
                             font=ctk.CTkFont("Segoe UI", 12),
                             ).pack(anchor="w", pady=(0, 10))
-
+        
         cf = ctk.CTkFrame(inner, fg_color="transparent")
         cf.pack(fill="x")
         self._rb_custom = ctk.CTkRadioButton(
@@ -400,22 +418,22 @@ class BgRemovePage(ctk.CTkFrame):
             fg_color=SEC, hover_color=SEC_HOVER, text_color=SEC_TEXT,
             text_color_disabled=TEXT_DISABLED,
             command=self._browse_out)
-
+        
         self._rb_custom.pack(side="left", padx=(0, 4))
         custom_lbl.pack(side="left",      padx=(0, 8))
         self._out_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self._browse_btn.pack(side="left")
         self._save_changed()
-
+    
     def _build_log_card(self, parent):
         inner = self._card(parent, "Progress Log", pack=True)
         self._log = ctk.CTkTextbox(inner, height=100, state="disabled",
                                     font=ctk.CTkFont("Consolas", 11),
                                     wrap="word")
         self._log.pack(fill="x")
-
+    
     # ── Card helper ────────────────────────────────────────────────────────
-
+    
     def _card(self, parent, title: str, pack=False, top_pad: int = 0) -> ctk.CTkFrame:
         outer = ctk.CTkFrame(parent, corner_radius=12)
         if pack:
@@ -428,9 +446,9 @@ class BgRemovePage(ctk.CTkFrame):
         inner = ctk.CTkFrame(outer, fg_color="transparent")
         inner.pack(fill="both", padx=PAD, pady=(10, 14))
         return inner
-
+    
     # ── State helpers ──────────────────────────────────────────────────────
-
+    
     def _pick_color(self):
         color = colorchooser.askcolor(
             title="Choose background colour",
@@ -439,12 +457,12 @@ class BgRemovePage(ctk.CTkFrame):
             self._fill_color = color[1]
             self._color_swatch.configure(fg_color=self._fill_color)
             self._fill_mode.set("custom")
-
+    
     def _save_changed(self):
         beside = self._out_mode.get() == "beside"
         self._out_entry.configure(state="disabled" if beside else "normal")
         self._browse_btn.configure(state="disabled" if beside else "normal")
-
+    
     def _browse_out(self):
         init = prefs.get("last_bgremove_out_dir", "")
         d = filedialog.askdirectory(title="Choose output folder",
@@ -457,20 +475,20 @@ class BgRemovePage(ctk.CTkFrame):
             self._save_changed()
             prefs["last_bgremove_out_dir"] = d
             prefs.save()
-
+    
     def _open_out(self):
         if self._last_out and os.path.isdir(self._last_out):
             try:
                 os.startfile(self._last_out)
             except Exception:
                 pass
-
+    
     def _log_msg(self, msg: str):
         self._log.configure(state="normal")
         self._log.insert("end", msg + "\n")
         self._log.see("end")
         self._log.configure(state="disabled")
-
+    
     def _set_busy(self, busy: bool):
         self._busy = busy
         s = "disabled" if busy else "normal"
@@ -479,9 +497,9 @@ class BgRemovePage(ctk.CTkFrame):
                   self._browse_btn):
             w.configure(state=s)
         self._cancel_btn.configure(state="normal" if busy else "disabled")
-
+    
     # ── File ops ───────────────────────────────────────────────────────────
-
+    
     def _add_files(self):
         init = prefs.get("last_bgremove_in_dir", "")
         paths = filedialog.askopenfilenames(
@@ -494,7 +512,7 @@ class BgRemovePage(ctk.CTkFrame):
             prefs["last_bgremove_in_dir"] = os.path.dirname(paths[0])
             prefs.save()
             self._ingest(list(paths))
-
+    
     def _add_folder(self):
         init = prefs.get("last_bgremove_in_dir", "")
         folder = filedialog.askdirectory(title="Choose folder with images",
@@ -508,7 +526,7 @@ class BgRemovePage(ctk.CTkFrame):
             found.extend(glob.glob(os.path.join(folder, ext)))
             found.extend(glob.glob(os.path.join(folder, ext.upper())))
         self._ingest(sorted(set(found)))
-
+    
     def _ingest(self, paths: list[str]):
         existing = set(self._files)
         for p in paths:
@@ -517,16 +535,16 @@ class BgRemovePage(ctk.CTkFrame):
                 self._files.append(p)
                 existing.add(p)
         self._refresh_list()
-
+    
     def _remove_last(self):
         if self._files:
             self._files.pop()
             self._refresh_list()
-
+    
     def _clear(self):
         self._files.clear()
         self._refresh_list()
-
+    
     def _refresh_list(self):
         self._file_box.configure(state="normal")
         self._file_box.delete("1.0", "end")
@@ -536,16 +554,16 @@ class BgRemovePage(ctk.CTkFrame):
         n = len(self._files)
         self._count_lbl.configure(
             text="0 images" if n == 0 else f"{n} image(s)")
-
+    
     # ── Run ────────────────────────────────────────────────────────────────
-
+    
     def _run(self):
         if self._busy:
             return
         if not self._files:
             messagebox.showinfo("Studio Tools", "Add some images first.")
             return
-
+        
         out_dir: str | None = None
         if self._out_mode.get() == "custom":
             out_dir = self._out_entry.get().strip()
@@ -556,48 +574,46 @@ class BgRemovePage(ctk.CTkFrame):
             os.makedirs(out_dir, exist_ok=True)
             prefs["last_bgremove_out_dir"] = out_dir
             prefs.save()
-
+        
         fill_mode = self._fill_mode.get()
         fill_col  = self._fill_color or "#FFFFFF"
         suffix    = self._out_suffix.get().strip() or "_nobg"
         tolerance = int(getattr(self, "_tolerance", ctk.IntVar(value=30)).get())
-
+        
         self._cancel   = False
         self._last_out = out_dir
         self._set_busy(True)
         self._prog.set(0)
-
+        
         threading.Thread(
             target=self._worker,
             args=(list(self._files), fill_mode, fill_col,
                   suffix, out_dir, tolerance),
             daemon=True).start()
-
+    
     def _worker(self, files, fill_mode, fill_col, suffix, out_dir, tolerance):
         total = len(files)
         ok = fail = 0
         first_out = None
-
+        
         # Load BRIA model once if available
         model_loaded = False
         if BRIA_AVAILABLE:
-            self._q.put(("status", "Loading BRIA RMBG model (first time only)…"))
+            self._q.put(("status", "Loading BRIA RMBG model (first time ~30 seconds)…"))
             try:
-                # Model is loaded inside bria_remove_bg — just test it
-                test_img = Image.new("RGB", (100, 100))
-                bria_remove_bg(test_img)
+                _load_bria_model()
                 model_loaded = True
-                self._q.put(("log", "✓ BRIA RMBG v1.4 loaded"))
+                self._q.put(("log", "✓ BRIA RMBG v1.4 loaded and ready"))
             except Exception as e:
                 self._q.put(("log", f"⚠ BRIA failed to load: {e}"))
                 self._q.put(("log", "  Falling back to Smart Color Removal"))
-
+        
         for i, src in enumerate(files, start=1):
             if self._cancel:
                 self._q.put(("status", f"Cancelled — {ok} done, {fail} failed"))
                 self._q.put(("done", out_dir or first_out))
                 return
-
+            
             name = os.path.basename(src)
             base = os.path.splitext(name)[0]
             dst  = os.path.join(
@@ -605,17 +621,17 @@ class BgRemovePage(ctk.CTkFrame):
                 base + suffix + ".png")
             if first_out is None:
                 first_out = os.path.dirname(dst)
-
+            
             self._q.put(("status", f"Processing  {i}/{total}  ·  {name}"))
             try:
                 img = Image.open(src)
-
+                
                 # Remove background
                 if model_loaded:
                     result = bria_remove_bg(img)
                 else:
                     result = smart_remove_bg(img, tolerance=tolerance, smooth=True)
-
+                
                 # Apply fill
                 if fill_mode == "white":
                     bg = Image.new("RGBA", result.size, (255, 255, 255, 255))
@@ -628,21 +644,21 @@ class BgRemovePage(ctk.CTkFrame):
                     bg.paste(result, mask=result.split()[3])
                     result = bg.convert("RGB")
                 # else: keep RGBA transparent
-
+                
                 result.save(dst, "PNG", optimize=True)
                 ok += 1
                 self._q.put(("log", f"✓  {name}  →  {os.path.basename(dst)}"))
-
+                
             except Exception as e:
                 fail += 1
                 self._q.put(("log", f"✗  {name}  —  {e}"))
-
+            
             self._q.put(("progress", i / total))
-
+        
         self._last_out = out_dir or first_out
         self._q.put(("status", f"✓  Done — {ok} processed, {fail} failed"))
         self._q.put(("done", out_dir or first_out))
-
+    
     def _drain(self):
         try:
             while True:

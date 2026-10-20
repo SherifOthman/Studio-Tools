@@ -252,7 +252,7 @@ class BatchRenamePage(ctk.CTkFrame):
 
         # Mode: Rename or Copy
         mc = self._card(parent, "② Mode")
-        self._mode = ctk.StringVar(value="rename")
+        self._mode = ctk.StringVar(value="copy")  # Default to copy mode
 
         row1 = ctk.CTkFrame(mc, fg_color="transparent")
         row1.pack(fill="x", pady=(0, 8))
