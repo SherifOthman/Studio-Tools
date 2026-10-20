@@ -170,9 +170,10 @@ class ImageConvertPage(ctk.CTkFrame):
         two.pack(fill="x", padx=PAD, pady=(0, PAD))
         two.grid_columnconfigure(0, weight=1)
         two.grid_columnconfigure(1, weight=1)
-        self._build_output_card(two)
-        self._build_quality_card(two)
-
+        # Build quality FIRST so _jpg_sld exists, then output card, then call fmt_changed
+        self._build_quality_card(two)   # col 1 — builds _jpg_sld
+        self._build_output_card(two)    # col 0 — references _jpg_sld in _fmt_changed
+        self._fmt_changed()             # safe to call now — both cards exist
         self._build_save(scroll)
         self._build_log(scroll)
 
@@ -271,8 +272,6 @@ class ImageConvertPage(ctk.CTkFrame):
             anchor="w",
         ).pack(anchor="w", pady=(2, 0))
 
-        self._fmt_changed()
-
     # ── Quality / options card ──────────────────────────────────────────────
 
     def _build_quality_card(self, parent):
@@ -285,9 +284,10 @@ class ImageConvertPage(ctk.CTkFrame):
 
         sl_row = ctk.CTkFrame(inner, fg_color="transparent")
         sl_row.pack(anchor="w", pady=(0, 4))
-        self._quality = ctk.IntVar(value=95)
-        sl = ctk.CTkSlider(sl_row, from_=10, to=100, variable=self._quality, width=200)
-        sl.pack(side="left")
+        self._quality  = ctk.IntVar(value=95)
+        self._jpg_sld  = ctk.CTkSlider(sl_row, from_=10, to=100,
+                                        variable=self._quality, width=200)
+        self._jpg_sld.pack(side="left")
         self._q_lbl = ctk.CTkLabel(sl_row, text="95",
                                     font=ctk.CTkFont("Segoe UI", 13, "bold"),
                                     width=36)
@@ -422,22 +422,39 @@ class ImageConvertPage(ctk.CTkFrame):
         return inner
 
     def _sec(self) -> dict:
-        return dict(fg_color=("gray75", "gray25"),
-                    hover_color=("gray65", "gray35"),
-                    text_color=("gray10", "gray95"))
+        return dict(
+            fg_color=("gray78", "gray28"),
+            hover_color=("gray68", "gray38"),
+            text_color=("gray10", "gray95"),
+            text_color_disabled=("gray45", "gray55"),
+        )
 
     def _ghost(self) -> dict:
-        return dict(fg_color=("gray80", "gray22"),
-                    hover_color=("gray70", "gray30"),
-                    text_color=("gray10", "gray95"))
+        return dict(
+            fg_color=("gray82", "gray22"),
+            hover_color=("gray72", "gray32"),
+            text_color=("gray10", "gray95"),
+            text_color_disabled=("gray45", "gray55"),
+        )
 
     def _fmt_changed(self):
         fmt = self._out_fmt.get()
-        lossy = fmt in ("JPG", "WEBP (lossy)")
-        if lossy:
+        # These formats are lossy — show quality slider and alpha option
+        is_lossy = fmt in ("JPG", "WEBP (lossy)")
+        # These formats support transparency natively (no compositing needed)
+        is_lossless = fmt in ("PNG", "TIFF", "BMP", "GIF", "ICO",
+                               "WEBP (lossless)")
+
+        # Show / hide alpha compositing option
+        if is_lossy:
             self._alpha_frame.pack(fill="x", pady=(10, 0))
         else:
             self._alpha_frame.pack_forget()
+
+        # Enable quality slider only for lossy formats
+        self._jpg_sld.configure(state="normal" if is_lossy else "disabled")
+        self._q_lbl.configure(
+            text_color=("gray10", "gray90") if is_lossy else ("gray60", "gray50"))
 
     def _resize_toggle(self):
         if self._resize_en.get():

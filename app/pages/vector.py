@@ -336,14 +336,22 @@ class VectorPage(ctk.CTkFrame):
         return inner
 
     def _sec(self) -> dict:
-        return dict(fg_color=("gray75", "gray25"),
-                    hover_color=("gray65", "gray35"),
-                    text_color=("gray10", "gray95"))
+        """Secondary button — visible in both light and dark mode, even when disabled."""
+        return dict(
+            fg_color=("gray78", "gray28"),
+            hover_color=("gray68", "gray38"),
+            text_color=("gray10", "gray95"),
+            text_color_disabled=("gray45", "gray55"),
+        )
 
     def _ghost(self) -> dict:
-        return dict(fg_color=("gray80", "gray22"),
-                    hover_color=("gray70", "gray30"),
-                    text_color=("gray10", "gray95"))
+        """Ghost/tertiary button."""
+        return dict(
+            fg_color=("gray82", "gray22"),
+            hover_color=("gray72", "gray32"),
+            text_color=("gray10", "gray95"),
+            text_color_disabled=("gray45", "gray55"),
+        )
 
     # ── State ─────────────────────────────────────────────────────────────
 
