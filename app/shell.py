@@ -10,10 +10,11 @@ from app.core.palette import EDGE, NAV_HOVER, TEXT_SUB
 from app.core.palette  import EDGE, NAV_HOVER
 
 NAV = [
-    ("vector",   "⟳",  "nav_vector"),
-    ("images",   "🖼",  "nav_images"),
-    ("rename",   "✏",  "nav_rename"),
-    ("settings", "⚙",  "nav_settings"),
+    ("vector",    "⟳",  "nav_vector"),
+    ("images",    "🖼",  "nav_images"),
+    ("rename",    "✏",  "nav_rename"),
+    ("bgremove",  "🪄",  "nav_bgremove"),
+    ("settings",  "⚙",  "nav_settings"),
 ]
 
 SIDEBAR_W = 220
@@ -143,13 +144,15 @@ class Shell(ctk.CTk):
         from app.pages.vector        import VectorPage
         from app.pages.image_convert import ImageConvertPage
         from app.pages.batch_rename  import BatchRenamePage
+        from app.pages.bg_remove     import BgRemovePage
         from app.pages.settings      import SettingsPage
 
-        self._pages["vector"]   = VectorPage(self._page_container, shell=self)
-        self._pages["images"]   = ImageConvertPage(self._page_container)
-        self._pages["rename"]   = BatchRenamePage(self._page_container)
-        self._pages["settings"] = SettingsPage(self._page_container,
-                                                on_theme_change=self._on_theme)
+        self._pages["vector"]    = VectorPage(self._page_container, shell=self)
+        self._pages["images"]    = ImageConvertPage(self._page_container)
+        self._pages["rename"]    = BatchRenamePage(self._page_container)
+        self._pages["bgremove"]  = BgRemovePage(self._page_container)
+        self._pages["settings"]  = SettingsPage(self._page_container,
+                                                 on_theme_change=self._on_theme)
 
         for page in self._pages.values():
             page.grid(row=0, column=0, sticky="nsew")

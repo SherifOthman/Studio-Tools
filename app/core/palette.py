@@ -1,57 +1,46 @@
 """
-app/core/palette.py  –  Single source of truth for all UI colours.
+app/core/palette.py  –  Single source of truth for all UI colour pairs.
 
-Uses Tailwind Slate scale for neutral surfaces — proven in real apps.
+Dark mode: keeps original CustomTkinter values (gray17, #1D1E1E etc.) which
+           looked great before — only the light mode was the problem.
+Light mode: uses Tailwind Slate scale for proper contrast and modern look.
 
-Light mode ladder:
-  Page bg       #F1F5F9  (Slate-100)
-  Card bg       #FFFFFF  (white)
-  Input bg      #F8FAFC  (Slate-50)
-  Border        #CBD5E1  (Slate-300)
-  Text primary  #1E293B  (Slate-800)
-  Text secondary#64748B  (Slate-500)
-  Text disabled #94A3B8  (Slate-400)
-
-Dark mode ladder:
-  Page bg       #0F1117
-  Card bg       #1E1E2E
-  Input bg      #1A1A2A
-  Border        #334155  (Slate-700 darkened)
-  Text primary  #F1F5F9  (Slate-100)
-  Text secondary#94A3B8  (Slate-400)
-  Text disabled #64748B  (Slate-500)
-
-CTk uses (light, dark) tuples for all colour params.
+CTk convention: (light_value, dark_value) tuples.
 """
 
 # ── Text ──────────────────────────────────────────────────────────────────
-TEXT            = ("#1E293B", "#F1F5F9")   # primary body text
-TEXT_SUB        = ("#64748B", "#94A3B8")   # secondary / hint text
-TEXT_DISABLED   = ("#94A3B8", "#64748B")   # disabled state text
+TEXT            = ("#1E293B", "#DCE4EE")   # primary text
+TEXT_SUB        = ("#64748B", "#9AA0B0")   # secondary / hints
+TEXT_DISABLED   = ("#94A3B8", "gray60")   # disabled state
 
-# ── Secondary buttons (outlined, clearly clickable in both modes) ─────────
-# Solid light fill in light mode, dark fill in dark — always readable
-SEC             = ("#E8EDF5", "#2A2A3C")           # subtle surface tint
-SEC_BORDER      = ("#94A3B8",  "#4B5563")          # Slate-400 / Gray-600
-SEC_HOVER       = ("#D1D9E8", "#353548")
-SEC_TEXT        = ("#1E293B",  "#F1F5F9")
+# ── Secondary buttons ─────────────────────────────────────────────────────
+# Light: soft blue-gray fill — clearly a button, not background
+# Dark: original CTk gray (was working fine)
+SEC             = ("#E8EDF5", "gray28")
+SEC_HOVER       = ("#D1D9E8", "gray38")
+SEC_TEXT        = ("#1E293B", "#DCE4EE")
 
-# ── Ghost / tertiary buttons (very light fill, text only) ─────────────────
-GHOST           = ("#F1F5F9",  "#252535")          # Slate-100 / dark surface
-GHOST_HOVER     = ("#E2E8F0",  "#2D2D40")          # Slate-200
-GHOST_TEXT      = ("#475569",  "#94A3B8")          # Slate-600 / Slate-400
+# ── Ghost / tertiary buttons ──────────────────────────────────────────────
+GHOST           = ("#F1F5F9", "gray22")
+GHOST_HOVER     = ("#E2E8F0", "gray32")
+GHOST_TEXT      = ("#475569", "#9AA0B0")
 
-# ── Preset / chip buttons (inactive — must be clearly clickable) ──────────
-CHIP            = ("#E2E8F0",  "#2D2D40")          # Slate-200 / dark surface
-CHIP_HOVER      = ("#CBD5E1",  "#3D3D52")          # Slate-300
-CHIP_TEXT       = ("#334155",  "#CBD5E1")          # Slate-700 / Slate-200
+# ── DPI preset / chip buttons ─────────────────────────────────────────────
+# Light: Slate-200 with Slate-700 text → clearly clickable, not background
+# Dark: original CTk subtle dark → same as before
+CHIP            = ("#E2E8F0", "gray25")
+CHIP_HOVER      = ("#CBD5E1", "gray35")
+CHIP_TEXT       = ("#334155", "#DCE4EE")
 
 # ── Lines / dividers ──────────────────────────────────────────────────────
-DIVIDER         = ("#E2E8F0",  "#2D2D40")          # rule inside a card
-EDGE            = ("#CBD5E1",  "#252535")          # rule between regions (sidebar sep)
+DIVIDER         = ("#E2E8F0", "gray30")    # rule inside a card
+EDGE            = ("#CBD5E1", "gray28")    # rule between regions
 
 # ── Navigation ────────────────────────────────────────────────────────────
-NAV_HOVER       = ("#E2E8F0",  "#2D2D40")
+NAV_HOVER       = ("#E2E8F0", "gray25")
 
-# ── Selectable rows (e.g. theme picker inactive card) ─────────────────────
-ROW             = ("#E2E8F0",  "#2D2D40")          # inactive selectable row/card
+# ── Selectable rows ───────────────────────────────────────────────────────
+ROW             = ("#E2E8F0", "gray20")
+
+# ── SEC_BORDER (kept for compatibility but SEC no longer uses border) ──────
+SEC_BORDER      = ("#94A3B8", "gray45")
