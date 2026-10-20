@@ -70,52 +70,55 @@ def bria_remove_bg(img: Image.Image) -> Image.Image:
     """
     Industry-grade background removal using BRIA RMBG v1.4.
     Pixel-perfect edges, handles complex backgrounds + fine details.
+    
+    OFFICIAL IMPLEMENTATION from huggingface.co/briaai/RMBG-1.4
     """
-    from torchvision import transforms
     import torch
+    import torch.nn.functional as F
+    from torchvision.transforms.functional import normalize
     
     # Load model (cached after first use)
     model, device = _load_bria_model()
     
-    # Preprocess
-    orig_size = img.size
-    transform = transforms.Compose([
-        transforms.Resize((1024, 1024)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406],
-                             [0.229, 0.224, 0.225])
-    ])
+    # Convert PIL to numpy array
+    orig_image = img.convert("RGB")
+    im = np.array(orig_image)
     
-    img_rgb = img.convert("RGB")
-    input_tensor = transform(img_rgb).unsqueeze(0).to(device)
+    # Preprocess using official method
+    if len(im.shape) < 3:
+        im = im[:, :, np.newaxis]
+    
+    orig_im_size = im.shape[0:2]
+    model_input_size = [1024, 1024]
+    
+    im_tensor = torch.tensor(im, dtype=torch.float32).permute(2, 0, 1)
+    im_tensor = F.interpolate(torch.unsqueeze(im_tensor, 0), 
+                              size=model_input_size, mode='bilinear')
+    image = torch.divide(im_tensor, 255.0)
+    # CRITICAL: Official normalization values (not ImageNet!)
+    image = normalize(image, [0.5, 0.5, 0.5], [1.0, 1.0, 1.0])
     
     # Inference
     with torch.no_grad():
-        preds = model(input_tensor)[-1].sigmoid().cpu()
-    pred_mask = preds[0].squeeze()
+        result = model(image.to(device))
     
-    # Convert to PIL and resize back
-    mask_pil = transforms.ToPILImage()(pred_mask)
-    mask_pil = mask_pil.resize(orig_size, Image.Resampling.LANCZOS)
+    # Post-process using official method
+    result = torch.squeeze(F.interpolate(result[0], size=orig_im_size, 
+                                          mode='bilinear'), 0)
+    ma = torch.max(result)
+    mi = torch.min(result)
+    result = (result - mi) / (ma - mi)
+    im_array = (result * 255).permute(1, 2, 0).cpu().data.numpy().astype(np.uint8)
+    im_array = np.squeeze(im_array)
     
-    # Convert mask to numpy for post-processing
-    mask_arr = np.array(mask_pil, dtype=np.float32) / 255.0
-    
-    # QUALITY IMPROVEMENT: Edge refinement
-    # 1. Contrast stretch to remove semi-transparent halos
-    low_thresh = 0.02    # Pixels below this → fully transparent
-    high_thresh = 0.98   # Pixels above this → fully opaque
-    mask_arr = np.clip((mask_arr - low_thresh) / (high_thresh - low_thresh), 0, 1)
-    
-    # 2. Light edge smoothing (1px feather) for anti-aliasing
-    mask_pil = Image.fromarray((mask_arr * 255).astype(np.uint8), mode="L")
-    mask_pil = mask_pil.filter(ImageFilter.GaussianBlur(radius=0.5))
+    # Convert mask to PIL
+    pil_mask = Image.fromarray(im_array)
     
     # Apply mask to create RGBA result
-    result = img_rgb.convert("RGBA")
-    result.putalpha(mask_pil)
+    result_img = orig_image.copy()
+    result_img.putalpha(pil_mask)
     
-    return result
+    return result_img
 
 
 # ── Smart Color Removal Engine (Fallback) ─────────────────────────────────

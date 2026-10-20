@@ -31,3 +31,17 @@ build/gs*.exe
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Temp directories
+.freebuff/
+
+# User preferences
+prefs.json
+
+# Executables (Ghostscript)
+gs10080w64.exe
