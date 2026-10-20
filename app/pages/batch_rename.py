@@ -1,35 +1,29 @@
 """
-pages/batch_rename.py  –  Batch Rename
+pages/batch_rename.py  –  Batch Rename + Copy Mode
 
-RENAME ENGINE LOGIC (carefully designed so options work together correctly):
+COPY MODE (new):
+  Instead of renaming the original files, the tool can now COPY them to a
+  destination folder with the new names. The originals remain untouched.
 
-  The rename applies in this fixed order:
-    1. Find & Replace   (works on original base name)
-    2. Case change      (applied after find/replace)
-    3. Spaces normalise (applied after case)
-    4. Number block     (assembled: prefix_text + number + suffix_text)
-       - If Position = "Replace name": the final name is ONLY the number block
-         → prefix/suffix text fields and find/replace are DISABLED
-       - If Position = "Before name": number block is prepended
-       - If Position = "After name":  number block is appended
-    5. Extension change (independent of everything above)
+RENAME ENGINE LOGIC:
+  1. Find & Replace   (works on original base name)
+  2. Case change      (applied after find/replace)
+  3. Spaces normalise (applied after case)
+  4. Number block     (assembled: prefix_text + number + suffix_text)
+     - If Position = "Replace name": final name = ONLY number block
+       → prefix/suffix/find/replace disabled
+     - If "Before name": number block prepended
+     - If "After name":  number block appended
+  5. Extension change (independent)
 
-  DISABLED STATES:
-    • "Replace name" selected  → Prefix, Suffix, Find/Replace all disabled
-      (because the whole name becomes just the number block)
-    • Number disabled          → Start, Step, Pad, Sep, Before/After text, Position all disabled
-    • Case "Keep"              → no change (still able to set spaces)
-    • Spaces "Keep"            → no change
-
-  TEXT BEFORE/AFTER NUMBER:
-    The number block is:  [before_text][number][after_text]
-    Then placed according to Position (before/after/replace the original name).
-    Example: before=IMG_, number=001, after=_beach, position=after
-    → original_name_IMG_001_beach.jpg
+COMPACT PREVIEW:
+  For long filenames, the original name is truncated to show only the end
+  (e.g. "...longname.jpg" → "NewName.jpg") so the new name is always visible.
 """
 
 import os
 import re
+import shutil
 import queue
 import threading
 from tkinter import filedialog, messagebox
@@ -54,7 +48,6 @@ def build_new_name(original: str, opts: dict, counter: int) -> str:
 
     # Step 1 – Find & Replace  (skip when replacing whole name with number)
     if opts.get("number_enabled") and pos == "replace":
-        # Whole name is the number block — ignore base name transforms
         pass
     else:
         find    = opts.get("find", "").strip()
@@ -103,13 +96,13 @@ def build_new_name(original: str, opts: dict, counter: int) -> str:
         after_txt  = opts.get("num_after",  "")
         n      = start + counter * step
         num_s  = str(n).zfill(pad)
-        block  = before_txt + num_s + after_txt   # e.g. "IMG_001_beach"
+        block  = before_txt + num_s + after_txt
 
         if pos == "prefix":
             base = block + base
         elif pos == "replace":
             base = block
-        else:                      # "suffix" (default)
+        else:
             base = base + block
 
     # Step 5 – Extension
@@ -146,7 +139,7 @@ class BatchRenamePage(ctk.CTkFrame):
         self._suffix_entry: ctk.CTkEntry | None = None
         self._find_entry:   ctk.CTkEntry | None = None
         self._repl_entry:   ctk.CTkEntry | None = None
-        self._num_option_widgets: list = []   # Start, Step, Pad, Sep, Before, After, Position radios
+        self._num_option_widgets: list = []
 
         self._build()
         self.after(120, self._drain)
@@ -162,7 +155,8 @@ class BatchRenamePage(ctk.CTkFrame):
                      font=ctk.CTkFont("Segoe UI", 22, "bold"),
                      anchor="w").grid(row=0, column=0, padx=(PAD, 10),
                                       pady=(14, 2), sticky="w")
-        ctk.CTkLabel(hdr, text="Rename files in bulk  ·  live preview updates as you type",
+        ctk.CTkLabel(hdr, text="Rename or copy files in bulk  ·  "
+                               "live preview updates as you type",
                      font=ctk.CTkFont("Segoe UI", 11),
                      text_color=TEXT_SUB, anchor="w").grid(
             row=1, column=0, padx=(PAD, 10), pady=(0, 10), sticky="w")
@@ -172,7 +166,7 @@ class BatchRenamePage(ctk.CTkFrame):
         body = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         body.grid(row=1, column=0, sticky="nsew")
         body.grid_rowconfigure(0, weight=1)
-        body.grid_columnconfigure(0, weight=5)
+        body.grid_columnconfigure(0, weight=4)
         body.grid_columnconfigure(1, weight=0, minsize=1)
         body.grid_columnconfigure(2, weight=6)
 
@@ -202,7 +196,7 @@ class BatchRenamePage(ctk.CTkFrame):
         inner.pack(fill="both", expand=True)
 
         self._rename_btn = ctk.CTkButton(
-            inner, text="▶  Rename Files", width=150, height=42,
+            inner, text="▶  Apply Changes", width=150, height=42,
             font=ctk.CTkFont("Segoe UI", 14, "bold"), command=self._rename)
         self._undo_btn = ctk.CTkButton(
             inner, text="↩  Undo", width=100, height=42, state="disabled",
@@ -214,7 +208,7 @@ class BatchRenamePage(ctk.CTkFrame):
             text_color_disabled=TEXT_DISABLED,
             command=lambda: setattr(self, "_cancel", True))
         self._status_lbl = ctk.CTkLabel(
-            inner, text="Add files, fill in the options, then press Rename.",
+            inner, text="Add files, choose Rename or Copy, then press Apply",
             font=ctk.CTkFont("Segoe UI", 11), text_color=TEXT_SUB, anchor="w")
         self._prog = ctk.CTkProgressBar(inner, height=6, corner_radius=3)
         self._prog.set(0)
@@ -255,12 +249,62 @@ class BatchRenamePage(ctk.CTkFrame):
                                          wrap="none")
         self._file_box.pack(fill="x")
 
+        # Mode: Rename or Copy
+        mc = self._card(parent, "② Mode")
+        self._mode = ctk.StringVar(value="rename")
+
+        row1 = ctk.CTkFrame(mc, fg_color="transparent")
+        row1.pack(fill="x", pady=(0, 8))
+        ctk.CTkRadioButton(row1, text="Rename files  (originals are changed)",
+                            variable=self._mode, value="rename",
+                            command=self._mode_changed,
+                            font=ctk.CTkFont("Segoe UI", 12, "bold"),
+                            ).pack(anchor="w")
+        ctk.CTkLabel(row1, text="The original files are modified in place.",
+                     font=ctk.CTkFont("Segoe UI", 10),
+                     text_color=TEXT_SUB, anchor="w").pack(anchor="w",
+                                                            padx=(28, 0))
+
+        row2 = ctk.CTkFrame(mc, fg_color="transparent")
+        row2.pack(fill="x")
+        ctk.CTkRadioButton(row2, text="Copy with new names  (originals kept)",
+                            variable=self._mode, value="copy",
+                            command=self._mode_changed,
+                            font=ctk.CTkFont("Segoe UI", 12, "bold"),
+                            ).pack(anchor="w")
+        ctk.CTkLabel(row2, text="Creates copies with the new names. Originals remain.",
+                     font=ctk.CTkFont("Segoe UI", 10),
+                     text_color=TEXT_SUB, anchor="w").pack(anchor="w",
+                                                            padx=(28, 0))
+
+        # Copy destination
+        self._copy_frame = ctk.CTkFrame(mc, fg_color="transparent")
+        cf_row = ctk.CTkFrame(self._copy_frame, fg_color="transparent")
+        cf_row.pack(fill="x", pady=(8, 0))
+        ctk.CTkLabel(cf_row, text="Copy to:",
+                     font=ctk.CTkFont("Segoe UI", 11, "bold"),
+                     width=70, anchor="w").pack(side="left")
+        saved_copy_dir = prefs.get("last_rename_copy_dir", "")
+        self._copy_entry = ctk.CTkEntry(cf_row, width=180,
+                                         placeholder_text="C:\\Output\\folder")
+        if saved_copy_dir:
+            self._copy_entry.insert(0, saved_copy_dir)
+        self._copy_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self._copy_browse = ctk.CTkButton(
+            cf_row, text="Browse…", width=90,
+            fg_color=SEC, hover_color=SEC_HOVER, text_color=SEC_TEXT,
+            text_color_disabled=TEXT_DISABLED,
+            command=self._browse_copy)
+        self._copy_browse.pack(side="left")
+        # Not shown by default
+        self._mode_changed()
+
         # Options
-        oc = self._card(parent, "② Rename Options")
+        oc = self._card(parent, "③ Rename Options")
 
         def R(p):
             f = ctk.CTkFrame(p, fg_color="transparent")
-            f.pack(fill="x", pady=4)
+            f.pack(fill="x", pady=3)
             return f
 
         def lbl(p, t, w=110):
@@ -285,7 +329,6 @@ class BatchRenamePage(ctk.CTkFrame):
         self._suffix_entry.pack(side="left", fill="x", expand=True)
         self._sfx.trace_add("write", lambda *_: self._refresh_preview())
 
-        # Separator
         ctk.CTkFrame(oc, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", pady=(6, 6))
 
@@ -318,7 +361,6 @@ class BatchRenamePage(ctk.CTkFrame):
                          font=ctk.CTkFont("Segoe UI", 11)
                          ).pack(side="left")
 
-        # Separator
         ctk.CTkFrame(oc, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", pady=(8, 6))
 
@@ -350,7 +392,6 @@ class BatchRenamePage(ctk.CTkFrame):
         self._case_seg.set("Keep")
         self._case_seg.pack(side="left", fill="x", expand=True)
 
-        # Separator
         ctk.CTkFrame(oc, height=1, fg_color=DIVIDER,
                      corner_radius=0).pack(fill="x", pady=(8, 6))
 
@@ -365,10 +406,9 @@ class BatchRenamePage(ctk.CTkFrame):
                          ).pack(side="left")
 
         self._num_frame = ctk.CTkFrame(oc, fg_color="transparent")
-
         nf = self._num_frame
 
-        # Position row — "Replace name" disables prefix/suffix/find/replace
+        # Position row
         r = ctk.CTkFrame(nf, fg_color="transparent")
         r.pack(fill="x", pady=3)
         ctk.CTkLabel(r, text="Position:", width=80, anchor="w",
@@ -383,7 +423,7 @@ class BatchRenamePage(ctk.CTkFrame):
             rb.pack(side="left", padx=(0, 12))
             self._num_option_widgets.append(rb)
 
-        # Text before/after number
+        # Text before/after
         r = ctk.CTkFrame(nf, fg_color="transparent")
         r.pack(fill="x", pady=3)
         ctk.CTkLabel(r, text="Text before #:", width=100, anchor="w",
@@ -459,14 +499,16 @@ class BatchRenamePage(ctk.CTkFrame):
                                 fg_color=("gray88", "gray22"), height=28)
         col_hdr.grid(row=1, column=0, sticky="ew", padx=PAD)
         col_hdr.grid_propagate(False)
+        col_hdr.grid_columnconfigure(0, weight=1)
+        col_hdr.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(col_hdr, text="ORIGINAL",
                      font=ctk.CTkFont("Segoe UI", 10, "bold"),
-                     text_color=TEXT_SUB, anchor="w").pack(
-            side="left", padx=10, fill="x", expand=True)
+                     text_color=TEXT_SUB, anchor="w").grid(
+            row=0, column=0, sticky="w", padx=10)
         ctk.CTkLabel(col_hdr, text="NEW NAME",
                      font=ctk.CTkFont("Segoe UI", 10, "bold"),
-                     text_color=TEXT_SUB, anchor="w").pack(
-            side="right", padx=10, fill="x", expand=True)
+                     text_color=TEXT_SUB, anchor="w").grid(
+            row=0, column=1, sticky="w", padx=10)
 
         self._prev_container = ctk.CTkScrollableFrame(
             parent, corner_radius=0, fg_color="transparent")
@@ -491,6 +533,29 @@ class BatchRenamePage(ctk.CTkFrame):
 
     # ── Disable logic ──────────────────────────────────────────────────────
 
+    def _mode_changed(self):
+        is_copy = self._mode.get() == "copy"
+        if is_copy:
+            self._copy_frame.pack(fill="x")
+        else:
+            self._copy_frame.pack_forget()
+        # Update button text
+        txt = "▶  Apply Copies" if is_copy else "▶  Rename Files"
+        self._rename_btn.configure(text=txt)
+        self._undo_btn.configure(state="disabled")
+        self._undo_map = None
+        self._refresh_preview()
+
+    def _browse_copy(self):
+        init = prefs.get("last_rename_copy_dir", "")
+        d = filedialog.askdirectory(title="Choose output folder",
+                                     initialdir=init or None)
+        if d:
+            self._copy_entry.delete(0, "end")
+            self._copy_entry.insert(0, d)
+            prefs["last_rename_copy_dir"] = d
+            prefs.save()
+
     def _toggle_num(self):
         if self._num_en.get():
             self._num_frame.pack(fill="x", pady=(0, 4))
@@ -499,7 +564,7 @@ class BatchRenamePage(ctk.CTkFrame):
         self._on_pos_change()
 
     def _on_pos_change(self):
-        """When 'Replace name' is selected, disable prefix/suffix/find/replace."""
+        """When 'Replace name' selected, disable prefix/suffix/find/replace."""
         is_replace = (self._num_en.get() and
                       self._num_pos.get() == "replace")
         s = "disabled" if is_replace else "normal"
@@ -507,7 +572,6 @@ class BatchRenamePage(ctk.CTkFrame):
                   self._find_entry, self._repl_entry):
             if w:
                 w.configure(state=s)
-        # Also grey out space/case since they apply to name which is gone
         self._space_seg.configure(state=s)
         self._case_seg.configure(state=s)
         self._refresh_preview()
@@ -577,14 +641,21 @@ class BatchRenamePage(ctk.CTkFrame):
             is_same     = (new_name == orig)
             is_conflict = (new_name in conflicts)
 
+            # Compact display: if orig is long (>30 ch), show only end
+            MAX_ORIG_LEN = 30
+            if len(orig) > MAX_ORIG_LEN:
+                disp_orig = "..." + orig[-(MAX_ORIG_LEN-3):]
+            else:
+                disp_orig = orig
+
             row = ctk.CTkFrame(
                 self._prev_container, corner_radius=6,
                 fg_color=("gray90","gray20") if is_same else
                          ("#FEE2E2","#3B1111") if is_conflict else
                          ("#F0FDF4","#0F2B1A"))
-            row.pack(fill="x", pady=(0, 3))
-            row.grid_columnconfigure(0, weight=1)
-            row.grid_columnconfigure(2, weight=1)
+            row.pack(fill="x", pady=(0, 2))
+            row.grid_columnconfigure(0, weight=1, uniform="col")
+            row.grid_columnconfigure(2, weight=1, uniform="col")
             self._prev_rows.append(row)
 
             orig_col = TEXT_SUB if is_same else ("gray40", "gray60")
@@ -592,22 +663,23 @@ class BatchRenamePage(ctk.CTkFrame):
                        ("#DC2626","#F87171") if is_conflict else \
                        ("#16A34A","#4ADE80")
 
-            ctk.CTkLabel(row, text=orig,
+            ctk.CTkLabel(row, text=disp_orig,
                          font=ctk.CTkFont("Consolas", 10),
                          text_color=orig_col, anchor="w").grid(
-                row=0, column=0, sticky="w", padx=(8, 4), pady=5)
+                row=0, column=0, sticky="w", padx=(8, 2), pady=4)
             ctk.CTkLabel(row, text="→",
                          font=ctk.CTkFont("Segoe UI", 10),
-                         text_color=TEXT_SUB).grid(row=0, column=1, padx=4)
+                         text_color=TEXT_SUB, width=16).grid(
+                row=0, column=1)
             ctk.CTkLabel(row, text=new_name,
                          font=ctk.CTkFont("Consolas", 10, "bold"),
                          text_color=new_col, anchor="w").grid(
-                row=0, column=2, sticky="w", padx=(4, 8), pady=5)
+                row=0, column=2, sticky="w", padx=(2, 8), pady=4)
 
         if len(self._files) > PREVIEW_ROWS:
             info = ctk.CTkLabel(
                 self._prev_container,
-                text=f"  … and {len(self._files) - PREVIEW_ROWS} more — all will be renamed.",
+                text=f"  … and {len(self._files) - PREVIEW_ROWS} more",
                 font=ctk.CTkFont("Segoe UI", 10), text_color=TEXT_SUB, anchor="w")
             info.pack(anchor="w", padx=4, pady=(4, 0))
             self._prev_rows.append(info)
@@ -661,19 +733,21 @@ class BatchRenamePage(ctk.CTkFrame):
         self._count_lbl.configure(
             text="0 files" if n == 0 else f"{n} file(s)")
 
-    # ── Rename ─────────────────────────────────────────────────────────────
+    # ── Rename / Copy ──────────────────────────────────────────────────────
 
     def _rename(self):
         if self._busy or not self._files:
             if not self._files:
                 messagebox.showinfo("Studio Tools",
-                                    "Add some files to rename first.")
+                                    "Add some files first.")
             return
 
+        mode = self._mode.get()
         opts = self._get_opts()
         new_names = [build_new_name(os.path.basename(p), opts, i)
                      for i, p in enumerate(self._files)]
 
+        # Conflict check
         seen: dict[str, int] = {}
         for n in new_names:
             seen[n] = seen.get(n, 0) + 1
@@ -690,19 +764,32 @@ class BatchRenamePage(ctk.CTkFrame):
                                 "None of the filenames would change.")
             return
 
-        if not messagebox.askyesno("Confirm Rename",
-                                   f"Rename {changed} file(s) on disk?\n"
-                                   "You can undo immediately after."):
+        # Copy mode: check output dir
+        out_dir = None
+        if mode == "copy":
+            out_dir = self._copy_entry.get().strip()
+            if not out_dir:
+                messagebox.showerror("Studio Tools",
+                    "Choose an output folder for the copies.")
+                return
+            os.makedirs(out_dir, exist_ok=True)
+            prefs["last_rename_copy_dir"] = out_dir
+            prefs.save()
+
+        verb = "Copy" if mode == "copy" else "Rename"
+        if not messagebox.askyesno(f"Confirm {verb}",
+                                   f"{verb} {changed} file(s)?\n\n"
+                                   f"{'Copies will be created in the output folder.' if mode == 'copy' else 'You can undo immediately after.'}"):
             return
 
         self._cancel = False
         self._set_busy(True)
         self._prog.set(0)
         threading.Thread(target=self._worker,
-                         args=(list(self._files), list(new_names)),
+                         args=(list(self._files), list(new_names), mode, out_dir),
                          daemon=True).start()
 
-    def _worker(self, files, new_names):
+    def _worker(self, files, new_names, mode, out_dir):
         total = len(files)
         ok = fail = 0
         undo_map: dict[str, str] = {}
@@ -710,29 +797,37 @@ class BatchRenamePage(ctk.CTkFrame):
         for i, (src, new_name) in enumerate(zip(files, new_names)):
             if self._cancel:
                 self._q.put(("status",
-                              f"Cancelled — {ok} renamed, {fail} failed"))
+                              f"Cancelled — {ok} done, {fail} failed"))
                 self._q.put(("done", undo_map or None))
                 return
 
             orig = os.path.basename(src)
-            if orig == new_name:
+            if orig == new_name and mode == "rename":
                 ok += 1
                 self._q.put(("progress", (i + 1) / total))
                 continue
 
-            dst = os.path.join(os.path.dirname(src), new_name)
-            self._q.put(("status", f"Renaming  {i+1}/{total}  ·  {orig}"))
+            if mode == "copy":
+                dst = os.path.join(out_dir, new_name)
+            else:
+                dst = os.path.join(os.path.dirname(src), new_name)
+
+            self._q.put(("status", f"Processing  {i+1}/{total}  ·  {orig}"))
             try:
                 if os.path.exists(dst):
                     raise FileExistsError(f"Target exists: {new_name}")
-                os.rename(src, dst)
-                undo_map[dst] = src
+                if mode == "copy":
+                    shutil.copy2(src, dst)
+                else:
+                    os.rename(src, dst)
+                    undo_map[dst] = src
                 ok += 1
             except Exception as e:
                 fail += 1
             self._q.put(("progress", (i + 1) / total))
 
-        self._q.put(("status", f"✓  Done — {ok} renamed, {fail} failed"))
+        verb = "copied" if mode == "copy" else "renamed"
+        self._q.put(("status", f"✓  Done — {ok} {verb}, {fail} failed"))
         self._q.put(("done", undo_map or None))
 
     def _undo(self):
@@ -777,7 +872,7 @@ class BatchRenamePage(ctk.CTkFrame):
                 elif kind == "done":
                     self._prog.set(1)
                     self._set_busy(False)
-                    if data:
+                    if data and self._mode.get() == "rename":
                         self._undo_map = data
                         self._undo_btn.configure(state="normal")
                         self._files = list(data.keys())

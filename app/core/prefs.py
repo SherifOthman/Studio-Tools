@@ -10,19 +10,20 @@ import os
 import sys
 
 _DEFAULTS = {
-    "theme":                 "blue",
-    "appearance":            "dark",
-    "fmt":                   "jpg",
-    "dpi":                   300,
-    "jpg_quality":           95,
-    "bg":                    "transparent",
-    "all_pages":             False,
-    "suffix":                "",
-    "out_mode":              "beside",
-    "last_out_dir":          "",
-    "last_rename_input_dir": "",
-    "last_bgremove_in_dir":  "",
-    "last_bgremove_out_dir": "",
+    "theme":                   "blue",
+    "appearance":              "dark",
+    "fmt":                     "jpg",
+    "dpi":                     300,
+    "jpg_quality":             95,
+    "bg":                      "transparent",
+    "all_pages":               False,
+    "suffix":                  "",
+    "out_mode":                "beside",
+    "last_out_dir":            "",
+    "last_rename_input_dir":   "",
+    "last_rename_copy_dir":    "",
+    "last_bgremove_in_dir":    "",
+    "last_bgremove_out_dir":   "",
 }
 
 
